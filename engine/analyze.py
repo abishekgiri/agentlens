@@ -97,32 +97,24 @@ def detect_wrong_tool_selection(
 
 
 def detect_repeated_loop(steps: list[dict[str, Any]]) -> Finding | None:
-    previous_signature: tuple[str, str] | None = None
-    repeat_count = 1
+    seen_tool_calls: dict[tuple[str, str], int] = {}
 
     for index, step in enumerate(steps):
         if step.get("type") != "tool_call":
-            previous_signature = None
-            repeat_count = 1
             continue
 
         current_signature = tool_signature(step)
-        if current_signature == previous_signature:
-            repeat_count += 1
-        else:
-            previous_signature = current_signature
-            repeat_count = 1
-
-        if repeat_count >= 2:
+        if current_signature in seen_tool_calls:
             number = step_number(step, index)
+            first_number = seen_tool_calls[current_signature]
             tool_name = str(step.get("tool", "tool"))
             return Finding(
                 pattern="repeated_loop",
                 step=number,
                 root_cause=f"Repeated loop detected by step {number}.",
                 why=(
-                    f"The agent repeated the same '{tool_name}' call with the same input instead "
-                    "of changing tactics after getting no progress."
+                    f"The agent repeated the same '{tool_name}' call from step {first_number} "
+                    "with the same input instead of changing tactics."
                 ),
                 fix=(
                     "Add a guardrail that stops identical retries after one failure and forces a "
@@ -130,12 +122,15 @@ def detect_repeated_loop(steps: list[dict[str, Any]]) -> Finding | None:
                 ),
                 confidence="High",
             )
+
+        seen_tool_calls[current_signature] = step_number(step, index)
     return None
 
 
 def detect_tool_error_not_handled(steps: list[dict[str, Any]]) -> Finding | None:
     for index, step in enumerate(steps):
-        if step.get("type") != "tool_result" or step.get("status") != "error":
+        has_tool_error = step.get("status") == "error" or "error" in step
+        if step.get("type") != "tool_result" or not has_tool_error:
             continue
 
         error_tool = str(step.get("tool", "")).strip().lower()
