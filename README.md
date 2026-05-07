@@ -1,95 +1,155 @@
 # AgentLens
 
-AgentLens is a lightweight root-cause explainer for failed AI agent runs.
+AgentLens is a Python SDK that captures AI agent runs as structured JSON so failures can later be diagnosed.
 
-Phase 0 focused on a local RCA analyzer. Phase 1 adds a small Python SDK that captures agent runs as structured JSON for debugging.
+It is focused on one job: make broken agent runs inspectable locally.
 
-This is not analytics, a dashboard, or a hosted service. The goal is high-quality local traces that make failures easier to explain.
+## What AgentLens Is Not
 
-## Supported failure patterns
+- not a web UI
+- not a hosted API
+- not analytics
+- not a database
+- not prompt management
+- not eval infrastructure
+- not cost monitoring
 
-- wrong tool selection
-- repeated loop
-- tool error not handled
-- missing final answer
+## Install
 
-## Usage
+Local install placeholder:
 
-Analyze an existing trace:
+```bash
+pip install -e .
+```
 
-From the project root:
+Optional provider SDKs:
+
+```bash
+pip install -e ".[anthropic,openai]"
+```
+
+## Two-Line Setup
+
+```python
+import agentlens
+agentlens.init(api_key="al_local")
+
+import anthropic
+client = anthropic.Anthropic()
+```
+
+After `agentlens.init(...)`, supported provider clients are intercepted automatically.
+
+## Run Context
+
+```python
+import agentlens
+
+agentlens.init(api_key="al_local")
+
+@agentlens.run(name="customer_support_agent")
+def run_agent(query):
+    ...
+```
+
+All captured LLM calls, tool selections, tool outputs, and errors inside the function are grouped under one `run_id`.
+
+Runs are saved locally in:
+
+```text
+.agentlens/runs/<run_id>.json
+```
+
+## CLI
+
+List recent local runs:
+
+```bash
+agentlens runs list
+```
+
+Show one run:
+
+```bash
+agentlens runs show <run_id>
+```
+
+Phase 2 RCA placeholder:
+
+```bash
+agentlens diagnose <run_id>
+```
+
+For now, `diagnose` prints:
+
+```text
+RCA engine is coming in Phase 2. Run captured successfully.
+```
+
+## Examples
+
+Run the Anthropic-style broken agent:
+
+```bash
+python examples/anthropic_broken_agent.py
+agentlens runs list
+agentlens runs show <run_id>
+```
+
+Run the OpenAI-style broken agent:
+
+```bash
+python examples/openai_broken_agent.py
+agentlens runs list
+agentlens runs show <run_id>
+```
+
+Both examples define two deliberately ambiguous tools:
+
+- `search_web`: `find info about a topic`
+- `query_db`: `find info about a topic`
+
+The model chooses `search_web`, the tool fails, and AgentLens captures the run locally.
+
+## Captured Data
+
+AgentLens currently captures:
+
+- run name
+- run ID
+- start and end timestamps
+- run status
+- provider name
+- model
+- input messages
+- tools passed to the model
+- response content
+- stop reason
+- token usage
+- latency
+- tool selections
+- tool outputs
+- errors
+
+## Phase 0 Analyzer
+
+The earlier Phase 0 CLI analyzer still exists:
 
 ```bash
 python engine/analyze.py tests/sample_trace.json
 ```
 
-To generate and analyze the deliberately broken Day 2 trace:
+Phase 2 will connect captured runs to real RCA logic. Week 2 only adds capture and viewing.
 
-```bash
-python tests/broken_agent.py
-python engine/analyze.py tests/real_trace.json
-```
+## Phase 1 Done Criteria
 
-Capture a new SDK trace from the Phase 1 broken-agent example:
+Phase 1 is done when:
 
-```bash
-python examples/broken_agent.py
-```
-
-This writes `agentlens_run.json` locally.
-
-## Python SDK
-
-```python
-from agentlens import AgentLensClient
-
-client = AgentLensClient(api_key="...")
-
-response = client.messages_create(
-    model="claude-3-5-sonnet-latest",
-    max_tokens=256,
-    messages=[{"role": "user", "content": "Help debug this run"}],
-)
-
-client.save_run()
-```
-
-The SDK captures:
-
-- LLM inputs and outputs
-- model name
-- tools passed to the model
-- tool selections
-- tool outputs recorded by the app
-- stop reason
-- token usage
-- latency
-- errors
-
-## AgentLens v1 Does Not
-
-- replay runs visually
-- monitor production
-- track cost
-- manage prompts
-- run evals
-- support multiple frameworks
-
-It does one thing:
-
-Diagnose why a run failed.
-
-## Phase 1 Done
-
-Phase 1 is DONE when:
-
-You can run a broken agent, and the SDK automatically captures its trace as structured JSON locally without manual logging.
-
-## Notes
-
-- Python only
-- no database
-- no web framework
-- no external API
-- intended to stay simple and readable
-- repository name: agentlens-
+- developer can install locally
+- developer adds two lines
+- broken agent runs
+- JSON trace appears automatically
+- CLI shows trace in readable format
+- Anthropic capture works
+- OpenAI capture works
+- `codex.md`, `.agentlens/`, `.env`, API keys, and generated run JSON files are not committed
