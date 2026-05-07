@@ -1,12 +1,10 @@
-# AgentLens Phase 0
+# AgentLens
 
 AgentLens is a lightweight root-cause explainer for failed AI agent runs.
 
-This Phase 0 prototype focuses on a single local Python script that:
+Phase 0 focused on a local RCA analyzer. Phase 1 adds a small Python SDK that captures agent runs as structured JSON for debugging.
 
-- loads an agent trace from JSON
-- scans the steps for simple failure patterns
-- prints a structured RCA report in the terminal
+This is not analytics, a dashboard, or a hosted service. The goal is high-quality local traces that make failures easier to explain.
 
 ## Supported failure patterns
 
@@ -16,6 +14,8 @@ This Phase 0 prototype focuses on a single local Python script that:
 - missing final answer
 
 ## Usage
+
+Analyze an existing trace:
 
 From the project root:
 
@@ -29,6 +29,42 @@ To generate and analyze the deliberately broken Day 2 trace:
 python tests/broken_agent.py
 python engine/analyze.py tests/real_trace.json
 ```
+
+Capture a new SDK trace from the Phase 1 broken-agent example:
+
+```bash
+python examples/broken_agent.py
+```
+
+This writes `agentlens_run.json` locally.
+
+## Python SDK
+
+```python
+from agentlens import AgentLensClient
+
+client = AgentLensClient(api_key="...")
+
+response = client.messages_create(
+    model="claude-3-5-sonnet-latest",
+    max_tokens=256,
+    messages=[{"role": "user", "content": "Help debug this run"}],
+)
+
+client.save_run()
+```
+
+The SDK captures:
+
+- LLM inputs and outputs
+- model name
+- tools passed to the model
+- tool selections
+- tool outputs recorded by the app
+- stop reason
+- token usage
+- latency
+- errors
 
 ## AgentLens v1 Does Not
 
