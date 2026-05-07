@@ -77,6 +77,24 @@ def detect_wrong_tool_selection(
             continue
 
         tool_name = str(step.get("tool", ""))
+        expected_tool = str(step.get("expected_tool", "")).strip()
+        if expected_tool and expected_tool != tool_name:
+            number = step_number(step, index)
+            return Finding(
+                pattern="wrong_tool_selection",
+                step=number,
+                root_cause=f"Wrong tool selection at step {number}.",
+                why=(
+                    f"The agent chose '{tool_name}', but the trace expected '{expected_tool}'. "
+                    "This points to a tool-selection failure before the tool result arrived."
+                ),
+                fix=(
+                    f"Make the tool descriptions distinct and add a selection rule that routes "
+                    f"this kind of request to '{expected_tool}'."
+                ),
+                confidence="High",
+            )
+
         if is_external_tool(tool_name) and (local_only or network_disabled):
             number = step_number(step, index)
             return Finding(
