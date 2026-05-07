@@ -6,6 +6,7 @@ import argparse
 import json
 from typing import Any
 
+from engine.diagnose import diagnose_run
 from sdk import AgentLensClient, init, load_run, load_runs, record_tool_result, run, save_run
 
 __all__ = [
@@ -41,7 +42,7 @@ def main() -> None:
         return
 
     if args.command == "diagnose":
-        print("RCA engine is coming in Phase 2. Run captured successfully.")
+        _print_diagnosis(args.run_id)
         return
 
     parser.print_help()
@@ -108,6 +109,51 @@ def _print_run_detail(run_id: str) -> None:
 def _compact(value: Any) -> str:
     text = json.dumps(value, ensure_ascii=True)
     return text if len(text) <= 500 else text[:497] + "..."
+
+
+def _print_diagnosis(run_id: str) -> None:
+    item = load_run(run_id)
+    if item is None:
+        print(f"Run not found: {run_id}")
+        return
+
+    diagnosis = diagnose_run(item)
+    if diagnosis.get("confidence", 0) < 0.6:
+        print("LOW CONFIDENCE")
+        print()
+        print(diagnosis.get("low_confidence_message"))
+        print()
+        print("LIKELY CAUSES:")
+        for cause in diagnosis.get("likely_causes", [])[:2]:
+            print(f"- {cause}")
+        print()
+        print("SUGGESTED FIXES:")
+        for fix in diagnosis.get("likely_fixes", [])[:2]:
+            print(f"- {fix}")
+        return
+
+    print("ROOT CAUSE:")
+    print(diagnosis["root_cause_category"])
+    print()
+    print("FAILED AT:")
+    tool = diagnosis.get("failed_at_tool") or "unknown tool"
+    print(f"Step {diagnosis['failed_at_step']} ({tool})")
+    print()
+    print("WHY:")
+    print(diagnosis["explanation"])
+    print()
+    print("FIX:")
+    print(diagnosis["fix"])
+    print()
+    print("SECONDARY:")
+    secondary = diagnosis.get("secondary_issues") or []
+    if secondary:
+        for issue in secondary:
+            print(f"- {issue}")
+    else:
+        print("None")
+    print()
+    print(f"CONFIDENCE: {diagnosis['confidence']:.2f}")
 
 
 if __name__ == "__main__":

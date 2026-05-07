@@ -74,17 +74,13 @@ Show one run:
 agentlens runs show <run_id>
 ```
 
-Phase 2 RCA placeholder:
+Diagnose a captured run:
 
 ```bash
 agentlens diagnose <run_id>
 ```
 
-For now, `diagnose` prints:
-
-```text
-RCA engine is coming in Phase 2. Run captured successfully.
-```
+`diagnose` prints root cause, failed step, why it happened, a concrete fix, secondary issues, and confidence.
 
 ## Examples
 
@@ -139,7 +135,22 @@ The earlier Phase 0 CLI analyzer still exists:
 python engine/analyze.py tests/sample_trace.json
 ```
 
-Phase 2 will connect captured runs to real RCA logic. Week 2 only adds capture and viewing.
+Phase 2 adds diagnosis for captured runs:
+
+```bash
+agentlens diagnose <run_id>
+```
+
+The diagnosis engine classifies failures into:
+
+- `tool_selection`
+- `context_pollution`
+- `loop`
+- `state_drift`
+- `cascade`
+- `overflow`
+
+If confidence is below `0.6`, AgentLens prints a low-confidence response with likely causes instead of a strong diagnosis.
 
 ## Phase 1 Done Criteria
 
