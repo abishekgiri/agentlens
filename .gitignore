@@ -3,3 +3,5 @@ __pycache__/
 codex.md
 .env
 agentlens_run.json
+.agentlens/
+*.egg-info/
