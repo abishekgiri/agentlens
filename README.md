@@ -23,6 +23,32 @@ From the project root:
 python engine/analyze.py tests/sample_trace.json
 ```
 
+To generate and analyze the deliberately broken Day 2 trace:
+
+```bash
+python tests/broken_agent.py
+python engine/analyze.py tests/real_trace.json
+```
+
+## AgentLens v1 Does Not
+
+- replay runs visually
+- monitor production
+- track cost
+- manage prompts
+- run evals
+- support multiple frameworks
+
+It does one thing:
+
+Diagnose why a run failed.
+
+## Phase 1 Done
+
+Phase 1 is DONE when:
+
+You can run a broken agent, and the SDK automatically captures its trace as structured JSON locally without manual logging.
+
 ## Notes
 
 - Python only
@@ -30,5 +56,4 @@ python engine/analyze.py tests/sample_trace.json
 - no web framework
 - no external API
 - intended to stay simple and readable
-
-# agentlens-
+- repository name: agentlens-
