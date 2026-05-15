@@ -1,24 +1,14 @@
 # AgentLens
 
-AgentLens is a Python SDK that captures AI agent runs as structured JSON so failures can later be diagnosed.
+AgentLens is a local CLI + Python SDK that captures AI agent runs and explains why they failed.
 
-It is focused on one job: make broken agent runs inspectable locally.
+It is for debugging broken agents, not monitoring production.
 
-## What AgentLens Is Not
-
-- not a web UI
-- not a hosted API
-- not analytics
-- not a database
-- not prompt management
-- not eval infrastructure
-- not cost monitoring
-
-## Install
-
-Local install placeholder:
+## 2-Minute Install
 
 ```bash
+git clone https://github.com/abishekgiri/agentlens-.git
+cd agentlens-
 pip install -e .
 ```
 
@@ -28,7 +18,9 @@ Optional provider SDKs:
 pip install -e ".[anthropic,openai]"
 ```
 
-## Two-Line Setup
+## Quickstart
+
+Add AgentLens before you create your provider client:
 
 ```python
 import agentlens
@@ -36,131 +28,70 @@ agentlens.init(api_key="al_local")
 
 import anthropic
 client = anthropic.Anthropic()
-```
-
-After `agentlens.init(...)`, supported provider clients are intercepted automatically.
-
-## Run Context
-
-```python
-import agentlens
-
-agentlens.init(api_key="al_local")
 
 @agentlens.run(name="customer_support_agent")
 def run_agent(query):
-    ...
+    return client.messages.create(
+        model="claude-3-5-sonnet-latest",
+        max_tokens=256,
+        messages=[{"role": "user", "content": query}],
+    )
 ```
 
-All captured LLM calls, tool selections, tool outputs, and errors inside the function are grouped under one `run_id`.
-
-Runs are saved locally in:
+Run your agent. AgentLens saves the trace locally:
 
 ```text
 .agentlens/runs/<run_id>.json
 ```
 
-## CLI
-
-List recent local runs:
+## Diagnose
 
 ```bash
 agentlens runs list
-```
-
-Show one run:
-
-```bash
-agentlens runs show <run_id>
-```
-
-Diagnose a captured run:
-
-```bash
 agentlens diagnose <run_id>
 ```
 
-`diagnose` prints root cause, failed step, why it happened, a concrete fix, secondary issues, and confidence.
+Example output:
 
-## Examples
+```text
+ROOT CAUSE:
+tool_selection
 
-Run the Anthropic-style broken agent:
+FAILED AT:
+Step 2 (search_web)
 
-```bash
-python examples/anthropic_broken_agent.py
-agentlens runs list
-agentlens runs show <run_id>
+WHY:
+Step 2 chose 'search_web' but the trace marks 'query_db' as the expected tool.
+
+FIX:
+Rewrite the tool descriptions so 'search_web' is clearly for external lookup and 'query_db' is clearly for this request, then route this case to 'query_db'.
+
+CONFIDENCE: 0.94
 ```
 
-Run the OpenAI-style broken agent:
+## Supported Providers
+
+- Anthropic: `client.messages.create(...)`
+- OpenAI: `client.chat.completions.create(...)`
+- OpenAI: `client.responses.create(...)`
+
+## Local Evaluation
+
+Run the built-in fixture evaluation:
 
 ```bash
-python examples/openai_broken_agent.py
-agentlens runs list
-agentlens runs show <run_id>
+agentlens evaluate
 ```
 
-Both examples define two deliberately ambiguous tools:
+This checks the current diagnosis engine against known failure cases and any saved cases in `real_world_cases/`.
 
-- `search_web`: `find info about a topic`
-- `query_db`: `find info about a topic`
+## What This Is Not
 
-The model chooses `search_web`, the tool fails, and AgentLens captures the run locally.
+- no dashboard
+- no hosted API
+- no database
+- no analytics platform
+- no billing
+- no auth
 
-## Captured Data
-
-AgentLens currently captures:
-
-- run name
-- run ID
-- start and end timestamps
-- run status
-- provider name
-- model
-- input messages
-- tools passed to the model
-- response content
-- stop reason
-- token usage
-- latency
-- tool selections
-- tool outputs
-- errors
-
-## Phase 0 Analyzer
-
-The earlier Phase 0 CLI analyzer still exists:
-
-```bash
-python engine/analyze.py tests/sample_trace.json
-```
-
-Phase 2 adds diagnosis for captured runs:
-
-```bash
-agentlens diagnose <run_id>
-```
-
-The diagnosis engine classifies failures into:
-
-- `tool_selection`
-- `context_pollution`
-- `loop`
-- `state_drift`
-- `cascade`
-- `overflow`
-
-If confidence is below `0.6`, AgentLens prints a low-confidence response with likely causes instead of a strong diagnosis.
-
-## Phase 1 Done Criteria
-
-Phase 1 is done when:
-
-- developer can install locally
-- developer adds two lines
-- broken agent runs
-- JSON trace appears automatically
-- CLI shows trace in readable format
-- Anthropic capture works
-- OpenAI capture works
-- `codex.md`, `.agentlens/`, `.env`, API keys, and generated run JSON files are not committed
+Phase 3 goal: get 10 real developers to try AgentLens on real broken agents and learn whether the diagnosis saves time.
