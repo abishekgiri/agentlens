@@ -1,1 +1,1 @@
-name,source,failure_type,diagnosis_correct,fix_worked,confidence,notes,would_pay
+name,source,trace_file,failure_type,diagnosis_correct,fix_worked,confidence,user_trust,install_friction,setup_confusion,cli_usability,diagnosis_readability,notes,would_pay
