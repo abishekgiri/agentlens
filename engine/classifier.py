@@ -80,6 +80,10 @@ def validate_diagnosis(diagnosis: dict[str, Any]) -> list[str]:
 
 
 def classify_from_evidence(compact_run: dict[str, Any]) -> dict[str, Any]:
+    warnings = compact_run.get("trace_warnings", [])
+    if "no usable spans" in warnings or "missing spans" in warnings:
+        return _low_confidence(compact_run, ["tool_selection", "state_drift"])
+
     detectors = [
         _detect_loop,
         _detect_overflow,
@@ -110,7 +114,7 @@ def _detect_tool_selection(compact_run: dict[str, Any]) -> dict[str, Any] | None
             continue
         tool = step.get("tool_name")
         expected = step.get("expected_tool")
-        output_text = _text(step.get("output")) + " " + compact_run.get("error", "")
+        output_text = _text(step.get("output")) + " " + _text(compact_run.get("error"))
         if expected and expected != tool:
             return _diagnosis(
                 "tool_selection",
@@ -236,12 +240,16 @@ def _diagnosis(
 
 
 def _low_confidence(compact_run: dict[str, Any], likely: list[str]) -> dict[str, Any]:
+    warning_text = "; ".join(compact_run.get("trace_warnings", []))
+    explanation = "We detected an issue but cannot confidently determine root cause from the trace evidence."
+    if warning_text:
+        explanation += f" Trace warnings: {warning_text}."
     return {
         "root_cause_category": likely[0],
         "confidence": 0.45,
         "failed_at_step": int(compact_run.get("failure_step_hint") or 0),
         "failed_at_tool": None,
-        "explanation": "We detected an issue but cannot confidently determine root cause from the trace evidence.",
+        "explanation": explanation,
         "fix": "Collect more detailed tool inputs, tool outputs, and the final model response before diagnosing.",
         "secondary_issues": likely[1:],
     }

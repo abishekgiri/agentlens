@@ -7,6 +7,7 @@ import json
 from typing import Any
 
 from engine.diagnose import diagnose_run
+from engine.evaluate import evaluate_cases, print_evaluation
 from sdk import AgentLensClient, init, load_run, load_runs, record_tool_result, run, save_run
 
 __all__ = [
@@ -30,6 +31,7 @@ def main() -> None:
 
     diagnose_parser = subparsers.add_parser("diagnose")
     diagnose_parser.add_argument("run_id")
+    subparsers.add_parser("evaluate")
 
     args = parser.parse_args()
 
@@ -43,6 +45,10 @@ def main() -> None:
 
     if args.command == "diagnose":
         _print_diagnosis(args.run_id)
+        return
+
+    if args.command == "evaluate":
+        print_evaluation(evaluate_cases())
         return
 
     parser.print_help()

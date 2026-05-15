@@ -20,7 +20,7 @@ from .preprocess import preprocess_run
 def diagnose_run(run_json: dict[str, Any], use_llm: bool = True) -> dict[str, Any]:
     spans = run_json.get("spans", [])
     if not isinstance(spans, list):
-        raise ValueError("Run JSON must contain a spans list.")
+        spans = []
 
     compact = preprocess_run(spans, run_json=run_json)
     diagnosis = _diagnose_with_llm(compact) if use_llm else None
