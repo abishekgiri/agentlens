@@ -125,6 +125,9 @@ def _print_diagnosis(run_id: str) -> None:
 
     diagnosis = diagnose_run(item)
     if diagnosis.get("confidence", 0) < 0.6:
+        print("AgentLens Diagnosis")
+        print("===================")
+        print()
         print("LOW CONFIDENCE")
         print()
         print(diagnosis.get("low_confidence_message"))
@@ -138,18 +141,21 @@ def _print_diagnosis(run_id: str) -> None:
             print(f"- {fix}")
         return
 
+    print("AgentLens Diagnosis")
+    print("===================")
+    print()
     print("ROOT CAUSE:")
-    print(diagnosis["root_cause_category"])
+    print(f"  {diagnosis['root_cause_category']}")
     print()
     print("FAILED AT:")
     tool = diagnosis.get("failed_at_tool") or "unknown tool"
-    print(f"Step {diagnosis['failed_at_step']} ({tool})")
+    print(f"  Step {diagnosis['failed_at_step']} ({tool})")
     print()
     print("WHY:")
-    print(diagnosis["explanation"])
+    print(f"  {diagnosis['explanation']}")
     print()
     print("FIX:")
-    print(diagnosis["fix"])
+    print(f"  {diagnosis['fix']}")
     print()
     print("SECONDARY:")
     secondary = diagnosis.get("secondary_issues") or []
@@ -157,7 +163,7 @@ def _print_diagnosis(run_id: str) -> None:
         for issue in secondary:
             print(f"- {issue}")
     else:
-        print("None")
+        print("  None")
     print()
     print(f"CONFIDENCE: {diagnosis['confidence']:.2f}")
 

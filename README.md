@@ -69,6 +69,10 @@ Rewrite the tool descriptions so 'search_web' is clearly for external lookup and
 CONFIDENCE: 0.94
 ```
 
+## Demo
+
+See `demo/terminal_recording.md` for a short terminal recording script showing a broken run, captured trace, and diagnosis output.
+
 ## Supported Providers
 
 - Anthropic: `client.messages.create(...)`
@@ -84,6 +88,16 @@ agentlens evaluate
 ```
 
 This checks the current diagnosis engine against known failure cases and any saved cases in `real_world_cases/`.
+
+Real-world cases should live in folders like:
+
+```text
+real_world_cases/customer-support-tool-selection/
+├── trace.json
+├── expected_diagnosis.json
+├── actual_diagnosis.txt
+└── notes.md
+```
 
 ## What This Is Not
 
