@@ -99,10 +99,19 @@ def _print_run_detail(run_id: str) -> None:
     print(f"Status: {item.get('status')}")
     print(f"Started: {item.get('started_at')}")
     print(f"Ended: {item.get('ended_at')}")
-    print(f"Spans: {len(item.get('spans', []))}")
+    spans = item.get("spans", [])
+    if not isinstance(spans, list):
+        spans = []
+    print(f"Spans: {len(spans)}")
     print()
 
-    for index, span in enumerate(item.get("spans", []), start=1):
+    for index, span in enumerate(spans, start=1):
+        if not isinstance(span, dict):
+            print(f"[{index}] malformed_span")
+            print(_compact(span))
+            print()
+            continue
+
         span_type = span.get("type")
         print(f"[{index}] {span_type}")
         if span_type == "llm_call":
@@ -126,7 +135,7 @@ def _print_run_detail(run_id: str) -> None:
 
 
 def _compact(value: Any) -> str:
-    text = json.dumps(value, ensure_ascii=True)
+    text = json.dumps(value, ensure_ascii=True, default=str)
     return text if len(text) <= 500 else text[:497] + "..."
 
 
@@ -249,6 +258,18 @@ def _anonymize_value(value: Any) -> Any:
 
 def _secret_key_name(key: str) -> bool:
     lowered = key.lower()
+    non_secret_token_fields = {
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "prompt_tokens",
+        "completion_tokens",
+        "cached_tokens",
+        "reasoning_tokens",
+        "max_tokens",
+    }
+    if lowered in non_secret_token_fields:
+        return False
     markers = ("api_key", "apikey", "token", "secret", "password", "authorization", "cookie")
     return any(marker in lowered for marker in markers)
 
@@ -261,6 +282,7 @@ def _anonymize_string(value: str) -> str:
         (r"\b(al_[A-Za-z0-9_-]{8,})\b", "[AGENTLENS_KEY]"),
         (r"(?i)(bearer\s+)[A-Za-z0-9._-]{12,}", r"\1[TOKEN]"),
         (r"(?i)(api[_-]?key\s*[:=]\s*)[A-Za-z0-9._-]{8,}", r"\1[API_KEY]"),
+        (r"(?i)(token\s*[:=]\s*)[A-Za-z0-9._-]{8,}", r"\1[TOKEN]"),
         (r"(?i)(password\s*[:=]\s*)\S+", r"\1[PASSWORD]"),
         (r"(?i)(secret\s*[:=]\s*)[A-Za-z0-9._-]{8,}", r"\1[SECRET]"),
     ]
