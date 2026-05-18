@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import re
 from typing import Any
@@ -10,6 +11,7 @@ from typing import Any
 from engine.diagnose import diagnose_run
 from engine.evaluate import evaluate_cases, print_evaluation
 from sdk import AgentLensClient, init, load_run, load_runs, record_tool_result, run, save_run
+from sdk.collector import RUNS_DIR
 
 __all__ = [
     "AgentLensClient",
@@ -18,6 +20,8 @@ __all__ = [
     "run",
     "save_run",
 ]
+
+CLI_COMMANDS = {"runs", "diagnose", "anonymize", "feedback-template", "evaluate", "doctor"}
 
 
 def main() -> None:
@@ -37,6 +41,7 @@ def main() -> None:
     feedback_parser = subparsers.add_parser("feedback-template")
     feedback_parser.add_argument("run_id")
     subparsers.add_parser("evaluate")
+    subparsers.add_parser("doctor")
 
     args = parser.parse_args()
 
@@ -62,6 +67,10 @@ def main() -> None:
 
     if args.command == "evaluate":
         print_evaluation(evaluate_cases())
+        return
+
+    if args.command == "doctor":
+        _print_doctor()
         return
 
     parser.print_help()
@@ -238,6 +247,221 @@ def _print_feedback_template(run_id: str) -> None:
     print()
     print("- Yes / No / Maybe:")
     print("- What would need to improve:")
+
+
+def _print_doctor() -> None:
+    checks = [
+        _doctor_check("imports", _doctor_imports),
+        _doctor_check("local storage", _doctor_local_storage),
+        _doctor_check("diagnosis fixture", _doctor_diagnosis_fixture),
+        _doctor_check("messy trace handling", _doctor_messy_trace_handling),
+        _doctor_check("anonymization", _doctor_anonymization),
+        _doctor_check("evaluation", _doctor_evaluation),
+    ]
+
+    print("AgentLens Doctor")
+    print()
+    for check in checks:
+        line = f"{check['status']:<5} {check['name']}"
+        if check["message"]:
+            line += f" - {check['message']}"
+        print(line)
+    print()
+
+    if any(check["status"] == "FAIL" for check in checks):
+        print("Result: needs attention")
+    elif any(check["status"] == "WARN" for check in checks):
+        print("Result: healthy with warnings")
+    else:
+        print("Result: healthy")
+
+
+def _doctor_check(name: str, check: Any) -> dict[str, str]:
+    try:
+        status, message = check()
+    except Exception as exc:  # Doctor should report broken states, not crash.
+        status, message = "FAIL", str(exc)
+    return {"name": name, "status": status, "message": message}
+
+
+def _doctor_imports() -> tuple[str, str]:
+    modules = [
+        "agentlens",
+        "sdk",
+        "sdk.collector",
+        "engine.classifier",
+        "engine.preprocess",
+        "engine.diagnose",
+        "engine.evaluate",
+        "engine.fixes",
+    ]
+    for module in modules:
+        importlib.import_module(module)
+
+    if not CLI_COMMANDS.issuperset({"doctor", "diagnose", "evaluate"}):
+        return "FAIL", "required CLI commands are missing"
+    return "PASS", ""
+
+
+def _doctor_local_storage() -> tuple[str, str]:
+    run_id = "agentlens_doctor_storage_check"
+    RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    path = RUNS_DIR / f"{run_id}.json"
+    payload = {
+        "run_id": run_id,
+        "name": "doctor",
+        "started_at": "2026-05-18T00:00:00+00:00",
+        "ended_at": "2026-05-18T00:00:01+00:00",
+        "status": "success",
+        "spans": [],
+    }
+    try:
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        loaded = load_run(run_id)
+        if not loaded or loaded.get("run_id") != run_id:
+            return "FAIL", "run JSON could not be read back"
+    finally:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+    return "PASS", ""
+
+
+def _doctor_diagnosis_fixture() -> tuple[str, str]:
+    diagnosis = diagnose_run(_doctor_tool_selection_run(), use_llm=False)
+    required = {
+        "root_cause_category",
+        "failed_at_step",
+        "confidence",
+        "explanation",
+        "fix",
+    }
+    missing = required - set(diagnosis)
+    if missing:
+        return "FAIL", f"diagnosis missing {', '.join(sorted(missing))}"
+    if not diagnosis["root_cause_category"]:
+        return "FAIL", "diagnosis did not return a category"
+    if not isinstance(diagnosis["failed_at_step"], int):
+        return "FAIL", "diagnosis did not return a failed step"
+    if not isinstance(diagnosis["confidence"], (int, float)):
+        return "FAIL", "diagnosis did not return confidence"
+    if not diagnosis["explanation"] or not diagnosis["fix"]:
+        return "FAIL", "diagnosis output was not readable"
+    return "PASS", ""
+
+
+def _doctor_messy_trace_handling() -> tuple[str, str]:
+    messy_run = {
+        "run_id": "agentlens_doctor_messy",
+        "name": "doctor_messy",
+        "status": "running",
+        "spans": [
+            "malformed span",
+            {
+                "id": "partial",
+                "type": "llm_call",
+                "provider": "openai",
+                "input_messages": [],
+                "response_content": {"unexpected": ["partial", None]},
+            },
+        ],
+    }
+    diagnosis = diagnose_run(messy_run, use_llm=False)
+    if diagnosis.get("confidence", 1.0) >= 0.6:
+        return "WARN", "messy trace produced medium/high confidence"
+    if not diagnosis.get("low_confidence_message"):
+        return "FAIL", "messy trace did not include low-confidence messaging"
+    return "PASS", ""
+
+
+def _doctor_anonymization() -> tuple[str, str]:
+    raw = {
+        "email": "alex@example.com",
+        "api_key": "sk-test123456789abcdef",
+        "headers": {"Authorization": "Bearer testBearerToken123456789"},
+        "text": "password=hunter2 secret=supersecretvalue token=tok_live_1234567890abcdef",
+        "usage": {"input_tokens": 123, "output_tokens": 45, "total_tokens": 168},
+    }
+    cleaned = _anonymize_value(raw)
+    cleaned_text = json.dumps(cleaned, sort_keys=True)
+    leaked = [
+        value
+        for value in [
+            "alex@example.com",
+            "sk-test123456789abcdef",
+            "testBearerToken123456789",
+            "hunter2",
+            "supersecretvalue",
+            "tok_live_1234567890abcdef",
+        ]
+        if value in cleaned_text
+    ]
+    if leaked:
+        return "FAIL", f"secret leaked: {leaked[0]}"
+    usage = cleaned.get("usage", {})
+    if usage.get("input_tokens") != 123 or usage.get("output_tokens") != 45:
+        return "FAIL", "token counts were redacted"
+    return "PASS", ""
+
+
+def _doctor_evaluation() -> tuple[str, str]:
+    report = evaluate_cases()
+    required = {"fixture_accuracy", "low_confidence_rate", "fixture_cases"}
+    missing = required - set(report)
+    if missing:
+        return "FAIL", f"evaluation missing {', '.join(sorted(missing))}"
+    if report["fixture_cases"] == 0:
+        return "FAIL", "no fixture cases found"
+    if report["fixture_accuracy"] < 1.0:
+        return "FAIL", f"fixture accuracy {report['fixture_accuracy']:.0%}"
+    return "PASS", ""
+
+
+def _doctor_tool_selection_run() -> dict[str, Any]:
+    return {
+        "run_id": "agentlens_doctor_tool_selection",
+        "name": "doctor_tool_selection",
+        "status": "error",
+        "spans": [
+            {
+                "type": "llm_call",
+                "provider": "anthropic",
+                "model": "claude-3-5-sonnet-latest",
+                "input_messages": [
+                    {
+                        "role": "user",
+                        "content": "Find the renewal status for customer:alex using local records.",
+                    }
+                ],
+                "tools": [
+                    {"name": "search_web", "description": "find info about a topic"},
+                    {"name": "query_db", "description": "find info about a topic"},
+                ],
+                "response_content": [
+                    {
+                        "type": "text",
+                        "text": "Both tools look similar, so I will use search_web.",
+                    },
+                    {
+                        "type": "tool_use",
+                        "name": "search_web",
+                        "input": {"query": "customer:alex renewal status"},
+                    },
+                ],
+                "usage": {"input_tokens": 100, "output_tokens": 30},
+            },
+            {
+                "type": "tool_call",
+                "tool_name": "search_web",
+                "input": {"query": "customer:alex renewal status"},
+                "output": {
+                    "status": "error",
+                    "error": "Customer records are only available in query_db.",
+                },
+            },
+        ],
+    }
 
 
 def _anonymize_value(value: Any) -> Any:

@@ -51,6 +51,14 @@ agentlens runs list
 agentlens diagnose <run_id>
 ```
 
+Before beta testing, run:
+
+```bash
+agentlens doctor
+```
+
+If doctor passes, AgentLens is ready for a beta user test.
+
 Before sharing a trace, anonymize it:
 
 ```bash
