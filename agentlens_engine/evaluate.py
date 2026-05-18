@@ -9,6 +9,7 @@ from typing import Any
 
 from .diagnose import diagnose_run
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 FIXTURE_EXPECTED = {
     "phase2_tool_selection": ("tool_selection", 2),
@@ -21,8 +22,8 @@ FIXTURE_EXPECTED = {
 
 
 def evaluate_cases(
-    fixture_dir: Path = Path("tests/phase2_runs"),
-    real_world_dir: Path = Path("real_world_cases"),
+    fixture_dir: Path = _REPO_ROOT / "tests" / "phase2_runs",
+    real_world_dir: Path = _REPO_ROOT / "real_world_cases",
 ) -> dict[str, Any]:
     results = []
     results.extend(_evaluate_directory(fixture_dir, FIXTURE_EXPECTED, source="fixture"))

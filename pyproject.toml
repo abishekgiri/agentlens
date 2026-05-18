@@ -22,4 +22,4 @@ agentlens = "agentlens:main"
 
 [tool.setuptools]
 py-modules = ["agentlens"]
-packages = ["engine", "sdk"]
+packages = ["agentlens_engine", "agentlens_sdk"]

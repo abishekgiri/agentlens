@@ -13,6 +13,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import agentlens
+from examples.shared_tools import search_web
 
 
 @dataclass
@@ -57,12 +58,11 @@ def install_fake_anthropic_if_needed() -> None:
     sys.modules["anthropic"] = fake_module
 
 
-def search_web(query: str) -> dict[str, str]:
-    return {
-        "status": "error",
-        "error": "Network access disabled. Customer records are only available in query_db.",
-        "query": query,
-    }
+def _block_attr(block: Any, key: str) -> Any:
+    """Get a field from a block that may be a dict (fake client) or an object (real SDK)."""
+    if isinstance(block, dict):
+        return block.get(key)
+    return getattr(block, key, None)
 
 
 @agentlens.run(name="anthropic_customer_support_agent")
@@ -97,13 +97,25 @@ def run_agent(query: str) -> None:
         messages=[{"role": "user", "content": query}],
     )
 
-    tool_use = next(block for block in response.content if block["type"] == "tool_use")
-    result = search_web(tool_use["input"]["query"])
+    tool_use = next(
+        (block for block in response.content if _block_attr(block, "type") == "tool_use"),
+        None,
+    )
+    if tool_use is None:
+        print("No tool call in response — agent did not select a tool.")
+        return
+
+    tool_name = _block_attr(tool_use, "name")
+    tool_input = _block_attr(tool_use, "input") or {}
+    tool_use_id = _block_attr(tool_use, "id")
+    query_str = tool_input.get("query", "") if isinstance(tool_input, dict) else str(tool_input)
+
+    result = search_web(query_str)
     agentlens.record_tool_result(
-        tool_name=tool_use["name"],
-        input=tool_use["input"],
+        tool_name=tool_name,
+        input=tool_input,
         output=result,
-        tool_use_id=tool_use["id"],
+        tool_use_id=tool_use_id,
     )
 
 

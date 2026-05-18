@@ -148,6 +148,15 @@ def _detect_context_pollution(compact_run: dict[str, Any]) -> dict[str, Any] | N
     return None
 
 
+def _tool_call_signature(step: dict[str, Any]) -> str:
+    """Stable string key for a tool call, used to detect repeated tool+input pairs."""
+    return json.dumps(
+        {"tool": step.get("tool_name"), "input": step.get("input")},
+        sort_keys=True,
+        default=str,
+    )
+
+
 def _detect_loop(compact_run: dict[str, Any]) -> dict[str, Any] | None:
     seen: dict[str, int] = {}
     for step in compact_run.get("diagnostic_steps", []):
@@ -155,11 +164,7 @@ def _detect_loop(compact_run: dict[str, Any]) -> dict[str, Any] | None:
             continue
         if step.get("output") is None:
             continue
-        signature = json.dumps(
-            {"tool": step.get("tool_name"), "input": step.get("input")},
-            sort_keys=True,
-            default=str,
-        )
+        signature = _tool_call_signature(step)
         if signature in seen:
             return _diagnosis(
                 "loop",
@@ -173,37 +178,78 @@ def _detect_loop(compact_run: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _detect_state_drift(compact_run: dict[str, Any]) -> dict[str, Any] | None:
-    goal_text = _all_input_text(compact_run)
-    if not _contains(goal_text, ["refund", "customer", "billing"]):
-        return None
     for step in compact_run.get("diagnostic_steps", []):
         step_text = _text(step)
-        if _contains(step_text, ["weather", "restaurant", "unrelated", "lost original goal", "switched topics"]):
+        if _contains(step_text, [
+            "weather", "restaurant", "unrelated", "lost original goal", "switched topics",
+            "off-topic", "different task", "forgot the original", "original objective",
+            "changed the subject", "irrelevant",
+        ]):
             return _diagnosis(
                 "state_drift",
                 0.89,
                 step["step"],
                 step.get("tool_name"),
-                f"Step {step['step']} no longer matches the original customer/billing goal and switches to unrelated content.",
+                f"Step {step['step']} diverges from the original goal and switches to unrelated content.",
             )
     return None
 
 
 def _detect_cascade(compact_run: dict[str, Any]) -> dict[str, Any] | None:
+    steps = compact_run.get("diagnostic_steps", [])
+
+    # Pass 1: find the FIRST tool_call that produced suspicious/corrupted output
+    # (status can still be ok — the data is silently bad)
     bad_output_step: dict[str, Any] | None = None
-    for step in compact_run.get("diagnostic_steps", []):
-        text = _text(step.get("output")) + " " + _text(step)
-        if step.get("type") == "tool_call" and _contains(text, ["stale", "malformed", "corrupted", "invalid id"]):
-            bad_output_step = step
+    bad_output_index: int = -1
+    BAD_OUTPUT_KEYWORDS = ["stale", "malformed", "corrupted", "invalid id", "NaN", "warning"]
+
+    for i, step in enumerate(steps):
+        if step.get("type") != "tool_call":
             continue
-        if bad_output_step and _contains(_text(step), ["used stale", "corrupted later", "invalid id", "downstream"]):
+        output = step.get("output")
+        output_text = _text(output)
+        # Flag as bad if: keywords present AND step status is NOT itself an error
+        # (an erroring step is a symptom, not the source)
+        is_source_of_bad_data = (
+            _contains(output_text, BAD_OUTPUT_KEYWORDS)
+            and not (isinstance(output, dict) and output.get("status") == "error")
+        )
+        if is_source_of_bad_data:
+            bad_output_step = step
+            bad_output_index = i
+            break  # stop at FIRST bad source, don't overwrite with downstream symptoms
+
+    if bad_output_step is None:
+        return None
+
+    # Pass 2: check whether a LATER step failed because of that bad data
+    for i, step in enumerate(steps):
+        if i <= bad_output_index:
+            continue
+
+        later_text = _text(step) + " " + _text(step.get("input")) + " " + _text(step.get("output"))
+
+        # Explicit cascade keywords in the downstream step
+        explicit_cascade = _contains(later_text, ["used stale", "corrupted later", "invalid id", "downstream"])
+
+        # Structural signal: downstream step errored (output status=error or error span follows)
+        output = step.get("output")
+        later_errored = (
+            step.get("type") == "error"
+            or (isinstance(output, dict) and output.get("status") == "error")
+        )
+
+        if explicit_cascade or later_errored:
             return _diagnosis(
                 "cascade",
-                0.9,
+                0.90,
                 bad_output_step["step"],
                 bad_output_step.get("tool_name"),
-                f"Step {bad_output_step['step']} produced bad tool output that corrupted a later step.",
+                f"Step {bad_output_step['step']} produced bad or corrupted output "
+                f"that caused a failure at step {step['step']}.",
             )
+
     return None
 
 
@@ -244,6 +290,11 @@ def _low_confidence(compact_run: dict[str, Any], likely: list[str]) -> dict[str,
     explanation = "We detected an issue but cannot confidently determine root cause from the trace evidence."
     if warning_text:
         explanation += f" Trace warnings: {warning_text}."
+
+    # Use trace signals to suggest more relevant categories instead of always
+    # defaulting to tool_selection + state_drift regardless of trace content
+    likely = _infer_likely_categories(compact_run) or likely
+
     return {
         "root_cause_category": likely[0],
         "confidence": 0.45,
@@ -253,6 +304,43 @@ def _low_confidence(compact_run: dict[str, Any], likely: list[str]) -> dict[str,
         "fix": "Collect more detailed tool inputs, tool outputs, and the final model response before diagnosing.",
         "secondary_issues": likely[1:],
     }
+
+
+def _infer_likely_categories(compact_run: dict[str, Any]) -> list[str]:
+    """Rank categories by trace evidence when no high-confidence detector fired."""
+    scores: dict[str, int] = {}
+    steps = compact_run.get("diagnostic_steps", [])
+    all_text = _text(compact_run).lower()
+
+    # Error span present → upstream tool likely produced bad data
+    if any(s.get("type") == "error" for s in steps):
+        scores["cascade"] = scores.get("cascade", 0) + 2
+
+    # Multiple tool_calls with same tool name → loop
+    tool_names = [s.get("tool_name") for s in steps if s.get("type") == "tool_call" and s.get("tool_name")]
+    if len(tool_names) != len(set(tool_names)):
+        scores["loop"] = scores.get("loop", 0) + 3
+
+    # Ambiguous tool descriptions present → tool_selection
+    if _has_ambiguous_tools(compact_run.get("tool_definitions", [])):
+        scores["tool_selection"] = scores.get("tool_selection", 0) + 2
+
+    # Contradiction / conflict keywords → context_pollution
+    if _contains(all_text, ["contradictory", "conflicting", "ignore", "also do"]):
+        scores["context_pollution"] = scores.get("context_pollution", 0) + 2
+
+    # Context window / truncation keywords → overflow
+    if _contains(all_text, ["context window", "truncated", "pushed out", "forgot earlier"]):
+        scores["overflow"] = scores.get("overflow", 0) + 2
+
+    if not scores:
+        return ["tool_selection", "state_drift"]
+
+    ranked = sorted(scores, key=lambda k: scores[k], reverse=True)
+    if len(ranked) < 2:
+        fallback = [c for c in ["tool_selection", "state_drift", "loop"] if c not in ranked]
+        ranked += fallback
+    return ranked[:2]
 
 
 def _has_ambiguous_tools(tools: list[dict[str, Any]]) -> bool:

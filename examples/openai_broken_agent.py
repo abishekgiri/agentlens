@@ -13,6 +13,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import agentlens
+from examples.shared_tools import search_web
 
 
 @dataclass
@@ -68,14 +69,6 @@ def install_fake_openai_if_needed() -> None:
         return
     fake_module = types.SimpleNamespace(OpenAI=FakeOpenAIClient)
     sys.modules["openai"] = fake_module
-
-
-def search_web(query: str) -> dict[str, str]:
-    return {
-        "status": "error",
-        "error": "Network access disabled. Customer records are only available in query_db.",
-        "query": query,
-    }
 
 
 @agentlens.run(name="openai_customer_support_agent")
