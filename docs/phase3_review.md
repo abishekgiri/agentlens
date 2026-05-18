@@ -5,8 +5,13 @@ Current status: Phase 3 is active, not complete.
 ## Real Users
 
 - Real developers onboarded: 0
+- Outreach sent: 0
+- Replies: 0
 - Installs: 0
 - Successful real broken-agent runs: 0
+- Traces received: 0
+- Confirmed useful diagnoses: 0
+- Payment signals: 0
 - Target: 10
 
 ## Diagnosis Accuracy
@@ -44,6 +49,7 @@ Current status: Phase 3 is active, not complete.
 
 - Unknown until the first beta call.
 - Track install friction and setup confusion in `feedback/users.csv`.
+- Track recurring setup failures in `docs/onboarding_failures.md`.
 
 ## Top User Requests
 
@@ -69,8 +75,12 @@ Do not move to Phase 4 until all are true:
 
 - DM 10 target developers using `launch/dm_template.md`.
 - Run one beta user through `docs/beta_test_checklist.md`.
+- Use `docs/beta_onboarding_script.md` during onboarding.
 - Save anonymized traces in `real_world_cases/`.
+- Use `agentlens anonymize <run_id>` before asking for a shared trace.
+- Use `agentlens feedback-template <run_id>` after diagnosis.
 - Update `feedback/users.csv` after every interaction.
+- Update `feedback/outreach.csv` after every outreach attempt.
 - Add unknown patterns to `docs/new_failure_patterns.md` instead of expanding categories immediately.
 - Add trust failures to `docs/trust_failures.md`.
 - Run `agentlens evaluate` after each real-world case is added.

@@ -34,6 +34,15 @@ cd agentlens-
 pip install -e .
 ```
 
+Useful commands:
+
+```bash
+agentlens runs list
+agentlens diagnose <run_id>
+agentlens anonymize <run_id>
+agentlens feedback-template <run_id>
+```
+
 The main question I am trying to answer:
 
 Does this genuinely help developers debug AI agents faster?

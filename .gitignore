@@ -5,3 +5,4 @@ codex.md
 agentlens_run.json
 .agentlens/
 *.egg-info/
+*.anonymized.json

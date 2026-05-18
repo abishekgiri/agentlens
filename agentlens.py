@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from typing import Any
 
 from engine.diagnose import diagnose_run
@@ -31,6 +32,10 @@ def main() -> None:
 
     diagnose_parser = subparsers.add_parser("diagnose")
     diagnose_parser.add_argument("run_id")
+    anonymize_parser = subparsers.add_parser("anonymize")
+    anonymize_parser.add_argument("run_id")
+    feedback_parser = subparsers.add_parser("feedback-template")
+    feedback_parser.add_argument("run_id")
     subparsers.add_parser("evaluate")
 
     args = parser.parse_args()
@@ -45,6 +50,14 @@ def main() -> None:
 
     if args.command == "diagnose":
         _print_diagnosis(args.run_id)
+        return
+
+    if args.command == "anonymize":
+        _anonymize_run(args.run_id)
+        return
+
+    if args.command == "feedback-template":
+        _print_feedback_template(args.run_id)
         return
 
     if args.command == "evaluate":
@@ -131,6 +144,7 @@ def _print_diagnosis(run_id: str) -> None:
         print("LOW CONFIDENCE")
         print()
         print(diagnosis.get("low_confidence_message"))
+        print("We are not treating this as a final root cause yet.")
         print()
         print("LIKELY CAUSES:")
         for cause in diagnosis.get("likely_causes", [])[:2]:
@@ -166,6 +180,94 @@ def _print_diagnosis(run_id: str) -> None:
         print("  None")
     print()
     print(f"CONFIDENCE: {diagnosis['confidence']:.2f}")
+
+
+def _anonymize_run(run_id: str) -> None:
+    item = load_run(run_id)
+    if item is None:
+        print(f"Run not found: {run_id}")
+        return
+
+    anonymized = _anonymize_value(item)
+    output_path = f"{item.get('run_id', run_id)}.anonymized.json"
+    with open(output_path, "w", encoding="utf-8") as handle:
+        json.dump(anonymized, handle, indent=2)
+    print(f"Wrote anonymized trace to {output_path}")
+    print("Review it before sharing. AgentLens removes obvious secrets, but you know your data best.")
+
+
+def _print_feedback_template(run_id: str) -> None:
+    print(f"# AgentLens Feedback: {run_id}")
+    print()
+    print("## What broke?")
+    print()
+    print("- ")
+    print()
+    print("## Was diagnosis correct?")
+    print()
+    print("- Yes / No / Partially:")
+    print("- Why:")
+    print()
+    print("## Did the suggested fix work?")
+    print()
+    print("- Yes / No / Not tried:")
+    print("- Notes:")
+    print()
+    print("## What was confusing?")
+    print()
+    print("- Install:")
+    print("- Setup:")
+    print("- CLI output:")
+    print("- Diagnosis wording:")
+    print()
+    print("## Would you use this again?")
+    print()
+    print("- Yes / No / Maybe:")
+    print("- Why:")
+    print()
+    print("## Would you pay for this?")
+    print()
+    print("- Yes / No / Maybe:")
+    print("- What would need to improve:")
+
+
+def _anonymize_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return _anonymize_string(value)
+    if isinstance(value, list):
+        return [_anonymize_value(item) for item in value]
+    if isinstance(value, dict):
+        cleaned = {}
+        for key, item in value.items():
+            if _secret_key_name(str(key)):
+                cleaned[key] = "[REDACTED]"
+            else:
+                cleaned[key] = _anonymize_value(item)
+        return cleaned
+    return value
+
+
+def _secret_key_name(key: str) -> bool:
+    lowered = key.lower()
+    markers = ("api_key", "apikey", "token", "secret", "password", "authorization", "cookie")
+    return any(marker in lowered for marker in markers)
+
+
+def _anonymize_string(value: str) -> str:
+    replacements = [
+        (r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[EMAIL]"),
+        (r"\bsk-[A-Za-z0-9_-]{12,}\b", "[API_KEY]"),
+        (r"\b(xox[baprs]-[A-Za-z0-9-]{10,})\b", "[TOKEN]"),
+        (r"\b(al_[A-Za-z0-9_-]{8,})\b", "[AGENTLENS_KEY]"),
+        (r"(?i)(bearer\s+)[A-Za-z0-9._-]{12,}", r"\1[TOKEN]"),
+        (r"(?i)(api[_-]?key\s*[:=]\s*)[A-Za-z0-9._-]{8,}", r"\1[API_KEY]"),
+        (r"(?i)(password\s*[:=]\s*)\S+", r"\1[PASSWORD]"),
+        (r"(?i)(secret\s*[:=]\s*)[A-Za-z0-9._-]{8,}", r"\1[SECRET]"),
+    ]
+    cleaned = value
+    for pattern, replacement in replacements:
+        cleaned = re.sub(pattern, replacement, cleaned)
+    return cleaned
 
 
 if __name__ == "__main__":

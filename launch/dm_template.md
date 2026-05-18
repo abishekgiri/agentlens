@@ -22,4 +22,11 @@ What I would ask:
 3. Send me the diagnosis output, not secrets.
 4. Tell me whether it was correct and whether the fix helped.
 
+There is also:
+
+```bash
+agentlens anonymize <run_id>
+agentlens feedback-template <run_id>
+```
+
 I am trying to learn whether this saves debugging time before building anything bigger.
