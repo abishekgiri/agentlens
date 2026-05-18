@@ -31,7 +31,7 @@ def diagnose_run(run_json: dict[str, Any], use_llm: bool = True) -> dict[str, An
     if diagnosis["confidence"] < 0.6:
         causes = [diagnosis["root_cause_category"], *diagnosis.get("secondary_issues", [])]
         diagnosis["low_confidence_message"] = (
-            "We detected an issue but cannot confidently determine root cause."
+            "We found possible causes but cannot confidently isolate root cause."
         )
         diagnosis["likely_causes"] = causes[:2]
         diagnosis["likely_fixes"] = likely_fixes(causes, compact)

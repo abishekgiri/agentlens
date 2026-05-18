@@ -17,6 +17,7 @@ Just:
 
 ```bash
 agentlens diagnose <run_id>
+agentlens anonymize <run_id>
 ```
 
 I am looking for 10 developers with real broken agents to test whether this actually saves debugging time.

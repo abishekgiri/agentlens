@@ -51,6 +51,18 @@ agentlens runs list
 agentlens diagnose <run_id>
 ```
 
+Before sharing a trace, anonymize it:
+
+```bash
+agentlens anonymize <run_id>
+```
+
+Send feedback:
+
+```bash
+agentlens feedback-template <run_id>
+```
+
 Example output:
 
 ```text

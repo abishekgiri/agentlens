@@ -31,7 +31,10 @@ pip install -e .
 Run:
 
 ```bash
+agentlens runs list
 agentlens diagnose <run_id>
+agentlens anonymize <run_id>
+agentlens feedback-template <run_id>
 ```
 
 What I want to learn:
@@ -40,5 +43,7 @@ What I want to learn:
 - Did it save debugging time?
 - Was the suggested fix useful?
 - Would you pay for this if it worked reliably?
+
+You do not need to share secrets. The anonymize command removes obvious emails/API keys/tokens, and you should review the output before sending anything.
 
 If you have a broken agent run, I would love to test it with you.
