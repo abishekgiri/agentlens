@@ -6,12 +6,13 @@ import argparse
 import importlib
 import json
 import re
+from pathlib import Path
 from typing import Any
 
-from engine.diagnose import diagnose_run
-from engine.evaluate import evaluate_cases, print_evaluation
-from sdk import AgentLensClient, init, load_run, load_runs, record_tool_result, run, save_run
-from sdk.collector import RUNS_DIR
+from agentlens_engine.diagnose import diagnose_run
+from agentlens_engine.evaluate import evaluate_cases, print_evaluation
+from agentlens_sdk import AgentLensClient, init, load_run, load_runs, record_tool_result, run, save_run
+from agentlens_sdk.collector import RUNS_DIR
 
 __all__ = [
     "AgentLensClient",
@@ -154,7 +155,11 @@ def _print_diagnosis(run_id: str) -> None:
         print(f"Run not found: {run_id}")
         return
 
-    diagnosis = diagnose_run(item)
+    try:
+        diagnosis = diagnose_run(item)
+    except ValueError as exc:
+        print(f"Diagnosis failed: {exc}")
+        return
     if diagnosis.get("confidence", 0) < 0.6:
         print("AgentLens Diagnosis")
         print("===================")
@@ -291,17 +296,21 @@ def _doctor_check(name: str, check: Any) -> dict[str, str]:
 
 def _doctor_imports() -> tuple[str, str]:
     modules = [
-        "agentlens",
-        "sdk",
-        "sdk.collector",
-        "engine.classifier",
-        "engine.preprocess",
-        "engine.diagnose",
-        "engine.evaluate",
-        "engine.fixes",
+        "agentlens_sdk",
+        "agentlens_sdk.collector",
+        "agentlens_engine.classifier",
+        "agentlens_engine.preprocess",
+        "agentlens_engine.diagnose",
+        "agentlens_engine.evaluate",
+        "agentlens_engine.fixes",
     ]
     for module in modules:
         importlib.import_module(module)
+
+    # Verify the public SDK surface is intact (not a self-referential import)
+    import agentlens as _al
+    if not callable(getattr(_al, "init", None)):
+        return "FAIL", "agentlens.init is missing or not callable"
 
     if not CLI_COMMANDS.issuperset({"doctor", "diagnose", "evaluate"}):
         return "FAIL", "required CLI commands are missing"
@@ -424,6 +433,14 @@ def _doctor_evaluation() -> tuple[str, str]:
 
 
 def _doctor_tool_selection_run() -> dict[str, Any]:
+    # Prefer the real fixture so the doctor tests the same data as evaluate.
+    _fixture_path = Path(__file__).resolve().parent / "tests" / "phase2_runs" / "phase2_tool_selection.json"
+    if _fixture_path.exists():
+        try:
+            return json.loads(_fixture_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            pass
+    # Fallback inline fixture when tests/ directory is not present.
     return {
         "run_id": "agentlens_doctor_tool_selection",
         "name": "doctor_tool_selection",

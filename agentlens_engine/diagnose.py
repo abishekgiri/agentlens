@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 from .classifier import (
@@ -53,57 +54,55 @@ def _diagnose_with_llm(compact_run: dict[str, Any]) -> dict[str, Any] | None:
 def _diagnose_with_openai(compact_run: dict[str, Any]) -> dict[str, Any] | None:
     try:
         from openai import OpenAI
+        client = OpenAI()
+        user_prompt = build_user_prompt(compact_run)
+        for _ in range(2):
+            response = client.chat.completions.create(
+                model=os.getenv("AGENTLENS_OPENAI_MODEL", "gpt-4.1-mini"),
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                response_format={"type": "json_object"},
+            )
+            raw = response.choices[0].message.content
+            try:
+                diagnosis = parse_diagnosis(raw)
+            except (TypeError, json.JSONDecodeError):
+                user_prompt += "\nYour previous output was invalid JSON. Return only valid JSON."
+                continue
+            if not validate_diagnosis(diagnosis):
+                return diagnosis
+            user_prompt += "\nYour previous output was invalid. Return only the required JSON fields."
+        return None
     except Exception:
         return None
-
-    client = OpenAI()
-    user_prompt = build_user_prompt(compact_run)
-    for _ in range(2):
-        response = client.chat.completions.create(
-            model=os.getenv("AGENTLENS_OPENAI_MODEL", "gpt-4.1-mini"),
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format={"type": "json_object"},
-        )
-        raw = response.choices[0].message.content
-        try:
-            diagnosis = parse_diagnosis(raw)
-        except (TypeError, json.JSONDecodeError):
-            user_prompt += "\nYour previous output was invalid JSON. Return only valid JSON."
-            continue
-        if not validate_diagnosis(diagnosis):
-            return diagnosis
-        user_prompt += "\nYour previous output was invalid. Return only the required JSON fields."
-    return None
 
 
 def _diagnose_with_anthropic(compact_run: dict[str, Any]) -> dict[str, Any] | None:
     try:
         import anthropic
+        client = anthropic.Anthropic()
+        user_prompt = build_user_prompt(compact_run)
+        for _ in range(2):
+            response = client.messages.create(
+                model=os.getenv("AGENTLENS_ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"),
+                max_tokens=1200,
+                system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+            raw = _anthropic_text(response)
+            try:
+                diagnosis = parse_diagnosis(raw)
+            except (TypeError, json.JSONDecodeError):
+                user_prompt += "\nYour previous output was invalid JSON. Return only valid JSON."
+                continue
+            if not validate_diagnosis(diagnosis):
+                return diagnosis
+            user_prompt += "\nYour previous output was invalid. Return only the required JSON fields."
+        return None
     except Exception:
         return None
-
-    client = anthropic.Anthropic()
-    user_prompt = build_user_prompt(compact_run)
-    for _ in range(2):
-        response = client.messages.create(
-            model=os.getenv("AGENTLENS_ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"),
-            max_tokens=1200,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-        raw = _anthropic_text(response)
-        try:
-            diagnosis = parse_diagnosis(raw)
-        except (TypeError, json.JSONDecodeError):
-            user_prompt += "\nYour previous output was invalid JSON. Return only valid JSON."
-            continue
-        if not validate_diagnosis(diagnosis):
-            return diagnosis
-        user_prompt += "\nYour previous output was invalid. Return only the required JSON fields."
-    return None
 
 
 def _anthropic_text(response: Any) -> str:
@@ -116,8 +115,7 @@ def _anthropic_text(response: Any) -> str:
             pieces.append(str(text))
     raw = "".join(pieces).strip()
     if raw.startswith("```"):
-        raw = raw.strip("`")
-        raw = raw.removeprefix("json").strip()
+        raw = re.sub(r'^```[a-z]*\n?', '', raw.strip()).rstrip('`').strip()
     return raw
 
 

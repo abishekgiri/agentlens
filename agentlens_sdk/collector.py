@@ -27,35 +27,11 @@ class AgentLensClient:
         self._run = start_run(name="manual")
 
     def messages_create(self, **kwargs: Any) -> Any:
-        started = time.perf_counter()
-        input_messages = kwargs.get("messages", [])
+        # Delegate to the shared proxy so capture logic lives in exactly one place.
+        proxy = _AnthropicMessagesProxy(self._client.messages)
         token = _current_run.set(self._run)
         try:
-            capture_tool_results_from_messages(input_messages, provider="anthropic")
-
-            try:
-                response = self._client.messages.create(**kwargs)
-                latency_ms = _elapsed_ms(started)
-                response_content = _to_jsonable(getattr(response, "content", None))
-                append_span(
-                    {
-                        "type": "llm_call",
-                        "provider": "anthropic",
-                        "ts": _now_iso(),
-                        "latency_ms": latency_ms,
-                        "input_messages": _to_jsonable(input_messages),
-                        "tools": _to_jsonable(kwargs.get("tools", [])),
-                        "model": kwargs.get("model"),
-                        "response_content": response_content,
-                        "stop_reason": getattr(response, "stop_reason", None),
-                        "usage": _to_jsonable(getattr(response, "usage", None)),
-                    }
-                )
-                capture_anthropic_tool_calls(response_content)
-                return response
-            except Exception as exc:
-                capture_error(exc, context=_anthropic_context(kwargs), latency_ms=_elapsed_ms(started))
-                raise
+            return proxy.create(**kwargs)
         finally:
             _current_run.reset(token)
 
@@ -208,16 +184,39 @@ def capture_error(error: Exception | str, context: Any, latency_ms: float | None
 
 
 def capture_tool_results_from_messages(messages: Any, provider: str) -> None:
+    run_data = current_run()
     for message in _as_list(messages):
         for block in _as_list(_get_value(message, "content")):
             if _get_value(block, "type") != "tool_result":
                 continue
+            tool_use_id = _get_value(block, "tool_use_id")
+            # Anthropic tool_result blocks carry no "name" field — resolve via matching llm_call span
+            tool_name = (
+                _get_value(block, "name")
+                or _resolve_tool_name_from_run(tool_use_id, run_data)
+                or provider
+            )
             record_tool_result(
-                tool_name=_get_value(block, "name") or provider,
+                tool_name=tool_name,
                 input=None,
                 output=_get_value(block, "content"),
-                tool_use_id=_get_value(block, "tool_use_id"),
+                tool_use_id=tool_use_id,
             )
+
+
+def _resolve_tool_name_from_run(tool_use_id: str | None, run_data: dict[str, Any]) -> str | None:
+    """Look backwards through llm_call spans to find the tool name for a given tool_use_id."""
+    if not tool_use_id:
+        return None
+    for span in reversed(run_data.get("spans", [])):
+        if span.get("type") != "llm_call":
+            continue
+        for block in _as_list(span.get("response_content")):
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use" and block.get("id") == tool_use_id:
+                return block.get("name")
+    return None
 
 
 def capture_anthropic_tool_calls(response_content: Any) -> None:
@@ -434,7 +433,11 @@ def load_run(run_id: str) -> dict[str, Any] | None:
     path = RUNS_DIR / f"{run_id}.json"
     if not path.exists():
         matches = [run for run in load_runs() if run.get("run_id", "").startswith(run_id)]
-        return matches[0] if len(matches) == 1 else None
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            print(f"Multiple runs match '{run_id}' — please provide more characters.")
+        return None
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -497,7 +500,13 @@ def _get_value(value: Any, key: str) -> Any:
 
 
 def _is_error_output(output: Any) -> bool:
-    return isinstance(output, dict) and (output.get("status") == "error" or "error" in output)
+    if not isinstance(output, dict):
+        return False
+    if output.get("status") == "error":
+        return True
+    # Only flag "error" key if its value is truthy — {"error": None} is not an error
+    error_val = output.get("error")
+    return error_val is not None and bool(error_val)
 
 
 def _extract_error_message(output: Any) -> str:
@@ -517,16 +526,33 @@ def _parse_maybe_json(value: Any) -> Any:
 
 def _find_tool_calls(value: Any) -> list[dict[str, Any]]:
     found: list[dict[str, Any]] = []
+    _collect_tool_calls(value, found)
+    # Deduplicate by tool call id — nested OpenAI response structures surface
+    # the same call at multiple levels (e.g. top-level and inside choices[].message)
+    seen_ids: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for item in found:
+        call_id = item.get("id")
+        if call_id:
+            if call_id in seen_ids:
+                continue
+            seen_ids.add(call_id)
+        deduped.append(item)
+    return deduped
+
+
+def _collect_tool_calls(value: Any, found: list[dict[str, Any]]) -> None:
     if isinstance(value, dict):
         maybe_calls = value.get("tool_calls")
         if isinstance(maybe_calls, list):
             found.extend(item for item in maybe_calls if isinstance(item, dict))
-        for item in value.values():
-            found.extend(_find_tool_calls(item))
+        # Skip the tool_calls key itself to avoid recursing into calls we already collected
+        for key, item in value.items():
+            if key != "tool_calls":
+                _collect_tool_calls(item, found)
     elif isinstance(value, list):
         for item in value:
-            found.extend(_find_tool_calls(item))
-    return found
+            _collect_tool_calls(item, found)
 
 
 def _first_choice_stop_reason(response_json: Any) -> Any:

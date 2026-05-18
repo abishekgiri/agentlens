@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .classifier import _tool_call_signature
+
 MAX_STEPS = 200
 MAX_TEXT_CHARS = 4000
 
@@ -73,16 +75,12 @@ def _find_failure_step(steps: list[dict[str, Any]]) -> int:
             continue
         if step.get("output") is None:
             continue
-        signature = json.dumps(
-            {"tool": step.get("tool_name"), "input": step.get("input")},
-            sort_keys=True,
-            default=str,
-        )
+        signature = _tool_call_signature(step)
         if signature in seen:
             return int(step["step"])
         seen[signature] = int(step["step"])
 
-    return int(steps[-1]["step"]) if steps else 0
+    return 0
 
 
 def _find_system_prompt(spans: list[dict[str, Any]]) -> str | None:
