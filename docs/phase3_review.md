@@ -5,6 +5,8 @@ Current status: Phase 3 is active, not complete.
 ## Real Users
 
 - Real developers onboarded: 0
+- Installs: 0
+- Successful real broken-agent runs: 0
 - Target: 10
 
 ## Diagnosis Accuracy
@@ -13,6 +15,11 @@ Current status: Phase 3 is active, not complete.
 - Correct real-world diagnoses: 0
 - Accuracy estimate: unknown
 - Target: around 70%+
+
+## Confidence Calibration
+
+- Unknown for real traces.
+- Current rule: low confidence is preferred over a confident unsupported diagnosis.
 
 ## Most Common Failure Types
 
@@ -26,11 +33,21 @@ Current status: Phase 3 is active, not complete.
 
 - Not observed yet.
 - Risk: users may distrust overconfident diagnoses if traces are sparse or messy.
+- Track every miss in `docs/trust_failures.md`.
 
 ## What Users Actually Care About
 
 - Unknown until beta calls.
 - Hypothesis: exact failed step, concrete fix, and whether the explanation matches their trace.
+
+## Biggest Onboarding Friction
+
+- Unknown until the first beta call.
+- Track install friction and setup confusion in `feedback/users.csv`.
+
+## Top User Requests
+
+- Unknown until real beta calls.
 
 ## UI vs Accuracy
 
@@ -55,3 +72,5 @@ Do not move to Phase 4 until all are true:
 - Save anonymized traces in `real_world_cases/`.
 - Update `feedback/users.csv` after every interaction.
 - Add unknown patterns to `docs/new_failure_patterns.md` instead of expanding categories immediately.
+- Add trust failures to `docs/trust_failures.md`.
+- Run `agentlens evaluate` after each real-world case is added.
