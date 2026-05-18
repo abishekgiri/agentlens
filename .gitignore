@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 codex.md
+CLAUDE.md
 .env
 agentlens_run.json
 .agentlens/
