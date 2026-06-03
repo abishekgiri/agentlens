@@ -1,0 +1,8 @@
+{
+  "root_cause_category": "tool_selection",
+  "failed_at_step": 2,
+  "failed_at_tool": "search_tickets",
+  "confidence_min": 0.8,
+  "confidence_max": 1.0,
+  "notes": "CrewAI custom LLM selected search_tickets for a billing refund lookup because search_tickets and query_billing_db had overlapping descriptions."
+}

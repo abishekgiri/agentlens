@@ -16,10 +16,10 @@ Current status: Phase 3 is active, not complete.
 
 ## External / Real-World Cases
 
-- External OSS validations: 1
-- External repo tested: `langchain-ai/langgraph`
-- Regression cases saved: 1
-- Regression folder: `real_world_cases/langgraph_tool_selection/`
+- External OSS validations: 2
+- External repos tested: `langchain-ai/langgraph`, `crewAIInc/crewAI`
+- Regression cases saved: 2
+- Regression folders: `real_world_cases/langgraph_tool_selection/`, `real_world_cases/crewai_tool_selection/`
 - Live provider validations: 0
 - Live provider status: blocked because no `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` was available.
 
@@ -29,7 +29,7 @@ Current status: Phase 3 is active, not complete.
 - Correct real-world diagnoses: 0
 - Accuracy estimate: unknown
 - Target: around 70%+
-- External OSS regression accuracy: 1/1 so far.
+- External OSS regression accuracy: 2/2 so far.
 - Note: External OSS regression accuracy is not a substitute for real user accuracy.
 
 ## Confidence Calibration
@@ -40,12 +40,12 @@ Current status: Phase 3 is active, not complete.
 ## Most Common Failure Types
 
 - Real user traces: unknown until real traces arrive.
-- External OSS validation observed `tool_selection`.
+- External OSS validations observed `tool_selection`.
 
 ## Most Useful Fixes
 
 - Unknown until users try suggested fixes.
-- External OSS validation produced an actionable tool-description/routing fix, but no real user has confirmed it saved time yet.
+- External OSS validations produced actionable tool-description/routing fixes, but no real user has confirmed they saved time yet.
 
 ## Biggest Trust Failures
 
@@ -88,6 +88,7 @@ Do not move to Phase 4 until all are true:
 
 ## Next Actions
 
+- Stop internal OSS validation unless a new real-user trace reveals a failure mode.
 - Run live provider validation once a real OpenAI or Anthropic API key is available.
 - DM 10 target developers using `launch/dm_template.md`.
 - Run one beta user through `docs/beta_test_checklist.md`.

@@ -56,3 +56,29 @@ This is more important than adding new features.
 - What evidence the engine missed: No live trace existed.
 - Follow-up change: Run one real OpenAI or Anthropic workflow before treating Phase 3 validation as strong.
 - Should this become a regression case: No, but it should remain tracked as a validation blocker.
+
+### CrewAI first harness trace was too sparse
+
+- Date: 2026-06-03
+- User/source: External OSS validation using `crewAIInc/crewAI`
+- Trace folder: Not saved as final regression case
+- Diagnosis category: Low-confidence likely causes were `cascade` and `tool_selection`
+- Confidence: below 0.6
+- What failed: The first temporary CrewAI harness returned a tool error saying no callable was available, which did not provide enough evidence for a confident wrong-tool diagnosis.
+- Why the user did not trust it: Not a user trust failure; this was a trace-quality issue in the temporary harness.
+- What evidence the engine missed: The trace did not contain the intended evidence that refund records belonged in `query_billing_db`.
+- Follow-up change: Reran CrewAI validation with a realistic tool error and saved `real_world_cases/crewai_tool_selection/`.
+- Should this become a regression case: No. The corrected CrewAI trace is the regression case.
+
+### CrewAI tool selection validation
+
+- Date: 2026-06-03
+- User/source: External OSS validation using `crewAIInc/crewAI`
+- Trace folder: `real_world_cases/crewai_tool_selection/`
+- Diagnosis category: `tool_selection`
+- Confidence: `0.90`
+- What failed: No trust failure observed. AgentLens correctly identified `search_tickets` as the failed tool-selection step.
+- Why the user did not trust it: Not applicable.
+- What evidence the engine missed: None observed for this case.
+- Follow-up change: Preserve as a regression case and stop further internal OSS validation unless real users reveal new issues.
+- Should this become a regression case: Yes.
