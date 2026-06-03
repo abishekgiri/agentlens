@@ -1,0 +1,159 @@
+{
+  "run_id": "adb7addc-f766-401a-ad8d-8640959ee07e",
+  "name": "langgraph_external_ambiguous_tool_agent",
+  "started_at": "2026-05-21T21:01:10.021778+00:00",
+  "ended_at": "2026-05-21T21:01:10.032003+00:00",
+  "status": "error",
+  "spans": [
+    {
+      "id": "480de9d9-ec59-42a0-98f9-f62041890b8d",
+      "run_id": "adb7addc-f766-401a-ad8d-8640959ee07e",
+      "type": "llm_call",
+      "provider": "langgraph_fake_model",
+      "model": "FakeToolCallingModel",
+      "input_messages": [
+        {
+          "role": "user",
+          "content": "Find the renewal status for customer:alex using local records."
+        }
+      ],
+      "tools": [
+        {
+          "name": "search_web",
+          "description": "find info about a topic"
+        },
+        {
+          "name": "query_db",
+          "description": "find info about a topic"
+        }
+      ],
+      "response_content": [
+        {
+          "type": "tool_use",
+          "id": "call_wrong_tool_1",
+          "name": "search_web",
+          "input": {
+            "query": "customer:alex renewal status"
+          }
+        }
+      ],
+      "stop_reason": "tool_use",
+      "usage": {
+        "input_tokens": 92,
+        "output_tokens": 19
+      }
+    },
+    {
+      "id": "3e493ee5-e18d-4eaa-85eb-2ab5425db801",
+      "run_id": "adb7addc-f766-401a-ad8d-8640959ee07e",
+      "type": "tool_call",
+      "ts": "2026-05-21T21:01:10.031289+00:00",
+      "tool_name": "search_web",
+      "input": {
+        "query": "customer:alex renewal status"
+      },
+      "output": {
+        "status": "error",
+        "error": "Network disabled. Customer renewal records are only available in query_db.",
+        "query": "customer:alex renewal status"
+      },
+      "tool_use_id": "call_wrong_tool_1"
+    },
+    {
+      "id": "24fd46cb-58e6-4a96-8207-512f14055958",
+      "run_id": "adb7addc-f766-401a-ad8d-8640959ee07e",
+      "type": "error",
+      "ts": "2026-05-21T21:01:10.031303+00:00",
+      "step_index": 3,
+      "latency_ms": null,
+      "error": "Network disabled. Customer renewal records are only available in query_db.",
+      "context": {
+        "tool_name": "search_web",
+        "input": {
+          "query": "customer:alex renewal status"
+        },
+        "output": {
+          "status": "error",
+          "error": "Network disabled. Customer renewal records are only available in query_db.",
+          "query": "customer:alex renewal status"
+        },
+        "tool_use_id": "call_wrong_tool_1"
+      }
+    },
+    {
+      "id": "4d2e2355-f130-4a62-8f03-0bc3d8bfeb90",
+      "run_id": "adb7addc-f766-401a-ad8d-8640959ee07e",
+      "type": "llm_call",
+      "provider": "langgraph_fake_model",
+      "model": "FakeToolCallingModel",
+      "input_messages": [
+        {
+          "content": "Find the renewal status for customer:alex using local records.",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "human",
+          "name": null,
+          "id": "b48a8d0d-f881-42e6-87ee-db8009b54040"
+        },
+        {
+          "content": "Find the renewal status for customer:alex using local records.",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "ai",
+          "name": null,
+          "id": "0",
+          "tool_calls": [
+            {
+              "name": "search_web",
+              "args": {
+                "query": "customer:alex renewal status"
+              },
+              "id": "call_wrong_tool_1",
+              "type": "tool_call"
+            }
+          ],
+          "invalid_tool_calls": [],
+          "usage_metadata": null
+        },
+        {
+          "content": "{\"status\": \"error\", \"error\": \"Network disabled. Customer renewal records are only available in query_db.\", \"query\": \"customer:alex renewal status\"}",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "tool",
+          "name": "search_web",
+          "id": "6d37d4aa-63c5-4f95-a36a-072abfeca31c",
+          "tool_call_id": "call_wrong_tool_1",
+          "artifact": null,
+          "status": "success"
+        },
+        {
+          "content": "Find the renewal status for customer:alex using local records.-Find the renewal status for customer:alex using local records.-{\"status\": \"error\", \"error\": \"Network disabled. Customer renewal records are only available in query_db.\", \"query\": \"customer:alex renewal status\"}",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "ai",
+          "name": null,
+          "id": "1",
+          "tool_calls": [],
+          "invalid_tool_calls": [],
+          "usage_metadata": null
+        }
+      ],
+      "response_content": {
+        "content": "Find the renewal status for customer:alex using local records.-Find the renewal status for customer:alex using local records.-{\"status\": \"error\", \"error\": \"Network disabled. Customer renewal records are only available in query_db.\", \"query\": \"customer:alex renewal status\"}",
+        "additional_kwargs": {},
+        "response_metadata": {},
+        "type": "ai",
+        "name": null,
+        "id": "1",
+        "tool_calls": [],
+        "invalid_tool_calls": [],
+        "usage_metadata": null
+      },
+      "stop_reason": "end",
+      "usage": {
+        "input_tokens": 137,
+        "output_tokens": 11
+      }
+    }
+  ]
+}
