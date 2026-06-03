@@ -1,0 +1,19 @@
+AgentLens Diagnosis
+===================
+
+ROOT CAUSE:
+  tool_selection
+
+FAILED AT:
+  Step 2 (search_web)
+
+WHY:
+  Step 2 chose 'search_web' after ambiguous tool descriptions, and the output says the data was only available elsewhere.
+
+FIX:
+  Rewrite ambiguous tool descriptions and add a routing check before calling 'search_web' so local tasks cannot be sent to the wrong tool.
+
+SECONDARY:
+  None
+
+CONFIDENCE: 0.90

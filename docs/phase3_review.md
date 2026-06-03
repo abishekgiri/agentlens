@@ -14,12 +14,23 @@ Current status: Phase 3 is active, not complete.
 - Payment signals: 0
 - Target: 10
 
+## External / Real-World Cases
+
+- External OSS validations: 1
+- External repo tested: `langchain-ai/langgraph`
+- Regression cases saved: 1
+- Regression folder: `real_world_cases/langgraph_tool_selection/`
+- Live provider validations: 0
+- Live provider status: blocked because no `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` was available.
+
 ## Diagnosis Accuracy
 
 - Confirmed real-world diagnoses: 0
 - Correct real-world diagnoses: 0
 - Accuracy estimate: unknown
 - Target: around 70%+
+- External OSS regression accuracy: 1/1 so far.
+- Note: External OSS regression accuracy is not a substitute for real user accuracy.
 
 ## Confidence Calibration
 
@@ -28,15 +39,18 @@ Current status: Phase 3 is active, not complete.
 
 ## Most Common Failure Types
 
-- Unknown until real traces arrive.
+- Real user traces: unknown until real traces arrive.
+- External OSS validation observed `tool_selection`.
 
 ## Most Useful Fixes
 
 - Unknown until users try suggested fixes.
+- External OSS validation produced an actionable tool-description/routing fix, but no real user has confirmed it saved time yet.
 
 ## Biggest Trust Failures
 
-- Not observed yet.
+- Not observed yet from real users.
+- Live provider validation is still missing, which remains a trust gap.
 - Risk: users may distrust overconfident diagnoses if traces are sparse or messy.
 - Track every miss in `docs/trust_failures.md`.
 
@@ -50,6 +64,7 @@ Current status: Phase 3 is active, not complete.
 - Unknown until the first beta call.
 - Track install friction and setup confusion in `feedback/users.csv`.
 - Track recurring setup failures in `docs/onboarding_failures.md`.
+- Known setup blocker: real provider validation requires a valid OpenAI or Anthropic key.
 
 ## Top User Requests
 
@@ -73,6 +88,7 @@ Do not move to Phase 4 until all are true:
 
 ## Next Actions
 
+- Run live provider validation once a real OpenAI or Anthropic API key is available.
 - DM 10 target developers using `launch/dm_template.md`.
 - Run one beta user through `docs/beta_test_checklist.md`.
 - Use `docs/beta_onboarding_script.md` during onboarding.

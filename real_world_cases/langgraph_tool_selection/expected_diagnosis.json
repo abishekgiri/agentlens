@@ -1,0 +1,8 @@
+{
+  "root_cause_category": "tool_selection",
+  "failed_at_step": 2,
+  "failed_at_tool": "search_web",
+  "confidence_min": 0.8,
+  "confidence_max": 1.0,
+  "notes": "LangGraph fake tool-calling model selected search_web for a local customer renewal lookup that should have used query_db."
+}
