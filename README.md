@@ -51,6 +51,17 @@ agentlens runs list
 agentlens diagnose <run_id>
 ```
 
+## Stats
+
+Inspect local token and latency usage:
+
+```bash
+agentlens stats
+agentlens stats <run_id>
+```
+
+This is the local Phase 3 version of cost and performance intelligence. It reports captured tokens, latency, providers, models, tool calls, errors, and any `cost_usd` fields present in traces. AgentLens does not estimate provider bills unless cost data is captured in the trace.
+
 Before beta testing, run:
 
 ```bash

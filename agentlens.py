@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import importlib
 import json
 import re
@@ -22,7 +23,15 @@ __all__ = [
     "save_run",
 ]
 
-CLI_COMMANDS = {"runs", "diagnose", "anonymize", "feedback-template", "evaluate", "doctor"}
+CLI_COMMANDS = {
+    "runs",
+    "diagnose",
+    "anonymize",
+    "feedback-template",
+    "evaluate",
+    "doctor",
+    "stats",
+}
 
 
 def main() -> None:
@@ -41,6 +50,8 @@ def main() -> None:
     anonymize_parser.add_argument("run_id")
     feedback_parser = subparsers.add_parser("feedback-template")
     feedback_parser.add_argument("run_id")
+    stats_parser = subparsers.add_parser("stats")
+    stats_parser.add_argument("run_id", nargs="?")
     subparsers.add_parser("evaluate")
     subparsers.add_parser("doctor")
 
@@ -64,6 +75,10 @@ def main() -> None:
 
     if args.command == "feedback-template":
         _print_feedback_template(args.run_id)
+        return
+
+    if args.command == "stats":
+        _print_stats(args.run_id)
         return
 
     if args.command == "evaluate":
@@ -257,6 +272,239 @@ def _print_feedback_template(run_id: str) -> None:
     print()
     print("- Yes / No / Maybe:")
     print("- What would need to improve:")
+
+
+def _print_stats(run_id: str | None) -> None:
+    if run_id:
+        item = load_run(run_id)
+        if item is None:
+            print(f"Run not found: {run_id}")
+            return
+        _print_run_stats(item)
+        return
+
+    runs = load_runs()
+    if not runs:
+        print("No AgentLens runs found in .agentlens/runs/")
+        return
+
+    summaries = [_summarize_run(item) for item in runs[:20]]
+    totals = _merge_stats(summaries)
+
+    print("AgentLens Stats")
+    print()
+    print(f"Runs analyzed: {len(summaries)}")
+    print(f"LLM calls: {totals['llm_calls']}")
+    print(f"Tool calls: {totals['tool_calls']}")
+    print(f"Errors: {totals['errors']}")
+    print(f"Input tokens: {totals['input_tokens']}")
+    print(f"Output tokens: {totals['output_tokens']}")
+    print(f"Total tokens: {totals['total_tokens']}")
+    print(f"Captured latency: {_format_ms(totals['latency_ms'])}")
+    print(f"Captured cost: {_format_cost(totals['cost_usd'])}")
+    print()
+    print(f"{'run_id':36}  {'name':24}  {'status':8}  {'llm':>3}  {'tool':>4}  {'tokens':>8}  latency")
+    for summary in summaries:
+        print(
+            f"{summary['run_id'][:36]:36}  "
+            f"{summary['name'][:24]:24}  "
+            f"{summary['status'][:8]:8}  "
+            f"{summary['llm_calls']:>3}  "
+            f"{summary['tool_calls']:>4}  "
+            f"{summary['total_tokens']:>8}  "
+            f"{_format_ms(summary['latency_ms'])}"
+        )
+
+
+def _print_run_stats(item: dict[str, Any]) -> None:
+    summary = _summarize_run(item)
+
+    print("AgentLens Run Stats")
+    print()
+    print(f"Run ID: {summary['run_id']}")
+    print(f"Name: {summary['name']}")
+    print(f"Status: {summary['status']}")
+    print(f"Started: {item.get('started_at')}")
+    print(f"Ended: {item.get('ended_at')}")
+    print(f"Duration: {_format_ms(summary['duration_ms'])}")
+    print()
+    print("Calls:")
+    print(f"  LLM calls: {summary['llm_calls']}")
+    print(f"  Tool calls: {summary['tool_calls']}")
+    print(f"  Errors: {summary['errors']}")
+    print()
+    print("Tokens:")
+    print(f"  Input tokens: {summary['input_tokens']}")
+    print(f"  Output tokens: {summary['output_tokens']}")
+    print(f"  Total tokens: {summary['total_tokens']}")
+    print()
+    print("Performance:")
+    print(f"  Captured latency: {_format_ms(summary['latency_ms'])}")
+    if summary["slowest_step"]:
+        print(f"  Slowest step: {summary['slowest_step']}")
+    else:
+        print("  Slowest step: unavailable")
+    print()
+    print("Cost:")
+    print(f"  Captured cost: {_format_cost(summary['cost_usd'])}")
+    if summary["cost_usd"] == 0:
+        print("  Note: provider billing cost is not captured unless traces include cost_usd.")
+    print()
+    print("Providers:")
+    _print_count_map(summary["providers"])
+    print()
+    print("Models:")
+    _print_count_map(summary["models"])
+
+
+def _summarize_run(item: dict[str, Any]) -> dict[str, Any]:
+    spans = item.get("spans", [])
+    if not isinstance(spans, list):
+        spans = []
+    safe_spans = [span for span in spans if isinstance(span, dict)]
+
+    providers: dict[str, int] = {}
+    models: dict[str, int] = {}
+    input_tokens = 0
+    output_tokens = 0
+    total_tokens = 0
+    latency_ms = 0.0
+    cost_usd = 0.0
+    slowest_latency = -1.0
+    slowest_step = ""
+
+    for index, span in enumerate(safe_spans, start=1):
+        provider = span.get("provider")
+        model = span.get("model")
+        if provider:
+            providers[str(provider)] = providers.get(str(provider), 0) + 1
+        if model:
+            models[str(model)] = models.get(str(model), 0) + 1
+
+        usage = span.get("usage") if isinstance(span.get("usage"), dict) else {}
+        usage_input = _number(usage.get("input_tokens")) + _number(usage.get("prompt_tokens"))
+        usage_output = _number(usage.get("output_tokens")) + _number(usage.get("completion_tokens"))
+        usage_total = _number(usage.get("total_tokens"))
+        if usage_total == 0 and (usage_input or usage_output):
+            usage_total = usage_input + usage_output
+        input_tokens += int(usage_input)
+        output_tokens += int(usage_output)
+        total_tokens += int(usage_total)
+
+        span_latency = _number(span.get("latency_ms"))
+        latency_ms += span_latency
+        if span_latency > 0 and span_latency > slowest_latency:
+            slowest_latency = span_latency
+            slowest_step = _describe_span(index, span, span_latency)
+
+        cost_usd += _extract_cost_usd(span)
+
+    return {
+        "run_id": str(item.get("run_id") or ""),
+        "name": str(item.get("name") or ""),
+        "status": str(item.get("status") or ""),
+        "llm_calls": sum(1 for span in safe_spans if span.get("type") == "llm_call"),
+        "tool_calls": sum(1 for span in safe_spans if span.get("type") == "tool_call"),
+        "errors": sum(1 for span in safe_spans if span.get("type") == "error"),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "latency_ms": latency_ms,
+        "duration_ms": _duration_ms(item.get("started_at"), item.get("ended_at")),
+        "cost_usd": cost_usd,
+        "slowest_step": slowest_step if slowest_latency >= 0 else "",
+        "providers": providers,
+        "models": models,
+    }
+
+
+def _merge_stats(summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    totals = {
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "errors": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "latency_ms": 0.0,
+        "cost_usd": 0.0,
+    }
+    for summary in summaries:
+        for key in totals:
+            totals[key] += summary[key]
+    return totals
+
+
+def _extract_cost_usd(value: Any) -> float:
+    if isinstance(value, dict):
+        total = 0.0
+        for key, item in value.items():
+            lowered = str(key).lower()
+            if lowered in {"cost_usd", "total_cost_usd"}:
+                total += _number(item)
+            elif lowered in {"cost", "total_cost"} and "token" not in lowered:
+                total += _number(item)
+            elif isinstance(item, (dict, list)):
+                total += _extract_cost_usd(item)
+        return total
+    if isinstance(value, list):
+        return sum(_extract_cost_usd(item) for item in value)
+    return 0.0
+
+
+def _duration_ms(started_at: Any, ended_at: Any) -> float:
+    if not isinstance(started_at, str) or not isinstance(ended_at, str):
+        return 0.0
+    try:
+        started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        ended = datetime.fromisoformat(ended_at.replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    return max((ended - started).total_seconds() * 1000, 0.0)
+
+
+def _describe_span(index: int, span: dict[str, Any], latency_ms: float) -> str:
+    label = str(span.get("type") or "unknown")
+    if span.get("tool_name"):
+        label += f" ({span['tool_name']})"
+    elif span.get("model"):
+        label += f" ({span['model']})"
+    return f"Step {index}: {label} at {_format_ms(latency_ms)}"
+
+
+def _print_count_map(values: dict[str, int]) -> None:
+    if not values:
+        print("  None captured")
+        return
+    for name, count in sorted(values.items()):
+        print(f"  {name}: {count}")
+
+
+def _format_ms(value: float) -> str:
+    if value <= 0:
+        return "unavailable"
+    if value < 1000:
+        return f"{value:.2f} ms"
+    return f"{value / 1000:.2f} s"
+
+
+def _format_cost(value: float) -> str:
+    if value <= 0:
+        return "not captured"
+    return f"${value:.6f}"
+
+
+def _number(value: Any) -> float:
+    if isinstance(value, bool):
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return 0.0
+    return 0.0
 
 
 def _print_doctor() -> None:

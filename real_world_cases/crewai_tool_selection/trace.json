@@ -1,0 +1,88 @@
+{
+  "run_id": "8422d234-df80-480e-90d8-4b21981563b5",
+  "name": "crewai_external_wrong_tool_agent",
+  "started_at": "2026-06-03T04:02:03.167794+00:00",
+  "ended_at": "2026-06-03T04:02:03.179936+00:00",
+  "status": "error",
+  "spans": [
+    {
+      "id": "73c26c6e-3b87-44d2-9ddd-99a9bdd8c255",
+      "run_id": "8422d234-df80-480e-90d8-4b21981563b5",
+      "type": "llm_call",
+      "provider": "crewai_custom_llm",
+      "model": "local-crewai-wrong-tool",
+      "input_messages": [
+        {
+          "role": "system",
+          "content": "You are Customer Support Analyst. You debug customer support requests and must route to the correct tool.\nYour personal goal is: Resolve customer refund questions using the right local tool.",
+          "cache_breakpoint": true
+        },
+        {
+          "role": "user",
+          "content": "\nCurrent Task: Check refund status for customer A-118 using available tools.\n\nThis is the expected criteria for your final answer: A short refund status answer.\nyou MUST return the actual complete content as the final answer, not a summary.",
+          "cache_breakpoint": true
+        }
+      ],
+      "tools": [
+        {
+          "name": "search_tickets",
+          "description": "find customer information by topic"
+        },
+        {
+          "name": "query_billing_db",
+          "description": "find customer information by topic"
+        }
+      ],
+      "response_content": [
+        {
+          "type": "tool_use",
+          "id": "crewai_wrong_tool_1",
+          "name": "search_tickets",
+          "input": {
+            "query": "refund status for customer A-118"
+          }
+        }
+      ],
+      "stop_reason": "tool_use",
+      "usage": {
+        "input_tokens": 104,
+        "output_tokens": 24
+      }
+    },
+    {
+      "id": "5768d9bd-3094-4eab-9cea-2fa672e90a6a",
+      "run_id": "8422d234-df80-480e-90d8-4b21981563b5",
+      "type": "tool_call",
+      "ts": "2026-06-03T04:02:03.176079+00:00",
+      "tool_name": "search_tickets",
+      "input": {
+        "query": "refund status for customer A-118"
+      },
+      "output": {
+        "status": "error",
+        "error": "Refund records are only available in query_billing_db."
+      },
+      "tool_use_id": "crewai_wrong_tool_1"
+    },
+    {
+      "id": "22a123d5-f21f-4cfc-8771-067f874b9181",
+      "run_id": "8422d234-df80-480e-90d8-4b21981563b5",
+      "type": "error",
+      "ts": "2026-06-03T04:02:03.176089+00:00",
+      "step_index": 3,
+      "latency_ms": null,
+      "error": "Refund records are only available in query_billing_db.",
+      "context": {
+        "tool_name": "search_tickets",
+        "input": {
+          "query": "refund status for customer A-118"
+        },
+        "output": {
+          "status": "error",
+          "error": "Refund records are only available in query_billing_db."
+        },
+        "tool_use_id": "crewai_wrong_tool_1"
+      }
+    }
+  ]
+}
