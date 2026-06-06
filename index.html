@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentLens — When your AI agent breaks, this tells you why</title>
+  <meta name="description" content="AgentLens tells you exactly which decision broke your AI agent and what to change. Works with LangGraph, CrewAI, AutoGen, OpenAI, Anthropic. Two lines to install." />
+  <meta property="og:title" content="AgentLens — When your AI agent breaks, this tells you why" />
+  <meta property="og:description" content="Not logs. Not traces. The answer. Works with LangGraph, CrewAI, AutoGen, OpenAI, Anthropic." />
+  <meta property="og:url" content="https://agentlens.run" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="AgentLens — When your AI agent breaks, this tells you why" />
+  <meta name="twitter:description" content="Not logs. Not traces. The answer. Works with LangGraph, CrewAI, AutoGen, OpenAI, Anthropic." />
+  <link rel="canonical" href="https://agentlens.run" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d0d0d;
+      --bg2:       #111111;
+      --bg3:       #161616;
+      --border:    #222222;
+      --border2:   #2a2a2a;
+      --green:     #22c55e;
+      --green-dim: #16a34a;
+      --amber:     #f59e0b;
+      --red:       #ef4444;
+      --blue:      #3b82f6;
+      --text:      #e5e5e5;
+      --text2:     #a3a3a3;
+      --text3:     #525252;
+      --mono:      'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      --sans:      -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 15px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--green); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,13,13,0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 52px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-logo {
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--green);
+      letter-spacing: -0.02em;
+    }
+    .nav-logo span { color: var(--text2); }
+    .nav-links { display: flex; gap: 24px; align-items: center; }
+    .nav-links a { color: var(--text2); font-size: 13px; }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+    .nav-gh {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--bg3);
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: 12px;
+      color: var(--text) !important;
+      font-family: var(--mono);
+    }
+    .nav-gh:hover { border-color: var(--green); text-decoration: none !important; }
+
+    /* ── SECTIONS ── */
+    section { max-width: 900px; margin: 0 auto; padding: 80px 24px; }
+    section.wide { max-width: 1100px; }
+    section.tight { padding: 48px 24px; }
+
+    /* ── HERO ── */
+    .hero { padding-top: 96px; padding-bottom: 64px; text-align: center; }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(34,197,94,0.08);
+      border: 1px solid rgba(34,197,94,0.2);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 12px;
+      font-family: var(--mono);
+      color: var(--green);
+      margin-bottom: 28px;
+    }
+    .hero-badge::before { content: '●'; font-size: 8px; }
+    h1 {
+      font-size: clamp(28px, 5vw, 52px);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.12;
+      margin-bottom: 20px;
+      color: #f5f5f5;
+    }
+    h1 em { font-style: normal; color: var(--green); }
+    .hero-sub {
+      font-size: clamp(15px, 2vw, 18px);
+      color: var(--text2);
+      max-width: 560px;
+      margin: 0 auto 36px;
+      line-height: 1.6;
+    }
+    .hero-sub strong { color: var(--text); }
+
+    /* ── INSTALL BLOCK ── */
+    .install-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 0;
+      background: var(--bg3);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .install-prompt {
+      padding: 10px 14px;
+      font-family: var(--mono);
+      font-size: 14px;
+      color: var(--green);
+      border-right: 1px solid var(--border2);
+      user-select: none;
+    }
+    .install-cmd {
+      padding: 10px 16px;
+      font-family: var(--mono);
+      font-size: 14px;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .copy-btn {
+      padding: 10px 14px;
+      background: none;
+      border: none;
+      border-left: 1px solid var(--border2);
+      color: var(--text3);
+      cursor: pointer;
+      font-size: 13px;
+      transition: color 0.15s;
+    }
+    .copy-btn:hover { color: var(--green); }
+    .hero-note { font-size: 12px; color: var(--text3); font-family: var(--mono); }
+
+    /* ── FRAMEWORKS ── */
+    .frameworks {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      justify-content: center;
+      margin-top: 40px;
+    }
+    .fw-tag {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-family: var(--mono);
+      color: var(--text2);
+    }
+
+    /* ── TERMINAL DEMO ── */
+    .terminal {
+      background: #0a0a0a;
+      border: 1px solid var(--border2);
+      border-radius: 10px;
+      overflow: hidden;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .term-bar {
+      background: #161616;
+      padding: 10px 16px;
+      display: flex; align-items: center; gap: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot-r { background: #ff5f57; }
+    .dot-y { background: #febc2e; }
+    .dot-g { background: #28c840; }
+    .term-title { flex: 1; text-align: center; font-size: 11px; color: var(--text3); }
+    .term-body { padding: 20px 24px; }
+    .term-body p { margin: 0; white-space: pre-wrap; }
+    .t-prompt { color: var(--green); }
+    .t-cmd { color: var(--text); }
+    .t-dim { color: var(--text3); }
+    .t-out { color: var(--text2); }
+    .t-section { color: var(--amber); font-weight: 600; }
+    .t-val { color: #a78bfa; }
+    .t-good { color: var(--green); }
+    .t-bad  { color: var(--red); }
+    .t-warn { color: var(--amber); }
+    .t-gap  { display: block; height: 8px; }
+
+    /* ── SECTION HEADERS ── */
+    .section-label {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--green);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+    h2 {
+      font-size: clamp(22px, 3vw, 32px);
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      margin-bottom: 14px;
+      color: #f5f5f5;
+    }
+    .sub { color: var(--text2); max-width: 560px; margin-bottom: 40px; line-height: 1.6; }
+
+    /* ── HOW IT WORKS ── */
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+    .step {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px;
+    }
+    .step-num {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--green);
+      margin-bottom: 10px;
+    }
+    .step h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; color: var(--text); }
+    .step p { font-size: 13px; color: var(--text2); line-height: 1.6; }
+    .step code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 6px;
+      color: var(--green);
+    }
+
+    /* ── FAILURE CARDS ── */
+    .failures { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+    .fail-card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+    .fail-card::before {
+      content: '';
+      position: absolute; left: 0; top: 0; bottom: 0;
+      width: 3px;
+      background: var(--green);
+    }
+    .fail-tag {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--green);
+      margin-bottom: 8px;
+      display: block;
+    }
+    .fail-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+    .fail-card p { font-size: 12px; color: var(--text2); line-height: 1.5; }
+
+    /* ── CODE BLOCK ── */
+    .code-block {
+      background: #0a0a0a;
+      border: 1px solid var(--border2);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .code-header {
+      background: var(--bg3);
+      padding: 10px 16px;
+      display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text3);
+    }
+    .code-lang { color: var(--green); }
+    pre {
+      padding: 20px 24px;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.7;
+      overflow-x: auto;
+      color: var(--text);
+    }
+    .kw  { color: #c084fc; }
+    .fn  { color: #60a5fa; }
+    .str { color: #86efac; }
+    .cm  { color: var(--text3); font-style: italic; }
+    .dec { color: var(--amber); }
+
+    /* ── DIAGNOSIS EXAMPLES ── */
+    .diag-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+    .diag-card {
+      background: #0a0a0a;
+      border: 1px solid var(--border2);
+      border-radius: 10px;
+      overflow: hidden;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .diag-header {
+      background: var(--bg3);
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .diag-fw { font-size: 11px; color: var(--text3); }
+    .diag-cat { color: var(--amber); font-weight: 600; font-size: 11px; }
+    .diag-body { padding: 16px; line-height: 1.8; }
+    .diag-label { color: var(--text3); }
+    .diag-val { color: var(--text); }
+    .diag-fix { color: var(--text2); font-size: 11px; margin-top: 10px; line-height: 1.5; }
+    .diag-conf { margin-top: 10px; }
+    .conf-bar-wrap { background: var(--border); border-radius: 2px; height: 3px; margin-top: 4px; }
+    .conf-bar { height: 3px; border-radius: 2px; background: var(--green); }
+
+    /* ── FOOTER ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 24px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text3);
+      font-family: var(--mono);
+    }
+    footer a { color: var(--text2); }
+
+    /* ── DIVIDER ── */
+    .divider { border: none; border-top: 1px solid var(--border); }
+
+    @media (max-width: 600px) {
+      .nav-links { display: none; }
+      .term-body { font-size: 11px; padding: 14px 16px; }
+      pre { font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">agent<span>lens</span></div>
+  <div class="nav-links">
+    <a href="#how">How it works</a>
+    <a href="#examples">Examples</a>
+    <a href="#install">Install</a>
+    <a href="https://github.com/abishekgiri/agentlens" class="nav-gh" target="_blank">
+      ★ GitHub
+    </a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge">open source · local-first · no signup</div>
+  <h1>When your AI agent breaks,<br><em>this tells you why.</em></h1>
+  <p class="hero-sub">
+    Not logs. Not traces. <strong>The answer.</strong><br>
+    Exact step, root cause, one-line fix — in under 30 seconds.
+  </p>
+
+  <div class="install-wrap">
+    <span class="install-prompt">$</span>
+    <span class="install-cmd" id="install-text">pip install agentlens</span>
+    <button class="copy-btn" onclick="copyInstall()" title="Copy">⎘</button>
+  </div>
+  <br>
+  <span class="hero-note">Python 3.9+ · no cloud · no API key required</span>
+
+  <div class="frameworks">
+    <span class="fw-tag">Anthropic</span>
+    <span class="fw-tag">OpenAI</span>
+    <span class="fw-tag">LangGraph</span>
+    <span class="fw-tag">CrewAI</span>
+    <span class="fw-tag">AutoGen</span>
+    <span class="fw-tag">PydanticAI</span>
+    <span class="fw-tag">raw API</span>
+  </div>
+</section>
+
+<!-- TERMINAL DEMO -->
+<section class="wide tight">
+  <div class="terminal">
+    <div class="term-bar">
+      <span class="dot dot-r"></span>
+      <span class="dot dot-y"></span>
+      <span class="dot dot-g"></span>
+      <span class="term-title">agentlens — diagnose</span>
+    </div>
+    <div class="term-body">
+<p><span class="t-prompt">$</span> <span class="t-cmd">agentlens diagnose cf3fcea8</span></p>
+<span class="t-gap"></span>
+<p><span class="t-section">AgentLens Diagnosis</span></p>
+<p><span class="t-dim">═══════════════════════════════════════</span></p>
+<span class="t-gap"></span>
+<p><span class="t-section">ROOT CAUSE:</span></p>
+<p>  <span class="t-val">tool_selection</span></p>
+<span class="t-gap"></span>
+<p><span class="t-section">FAILED AT:</span></p>
+<p>  Step <span class="t-val">2</span>  <span class="t-dim">(search_web)</span></p>
+<span class="t-gap"></span>
+<p><span class="t-section">WHY:</span></p>
+<p>  <span class="t-out">Both tools had identical descriptions — the agent treated</span></p>
+<p>  <span class="t-out">them as interchangeable and called search_web for a local</span></p>
+<p>  <span class="t-out">record lookup that only query_db can answer.</span></p>
+<span class="t-gap"></span>
+<p><span class="t-section">FIX:</span></p>
+<p>  <span class="t-out">Rewrite tool descriptions so search_web is clearly for</span></p>
+<p>  <span class="t-out">external web queries and query_db is clearly for internal</span></p>
+<p>  <span class="t-out">customer records. Make them mutually exclusive.</span></p>
+<span class="t-gap"></span>
+<p><span class="t-section">CONFIDENCE:</span>  <span class="t-good">0.90</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="how">
+  <div class="section-label">// how it works</div>
+  <h2>Two lines. That's it.</h2>
+  <p class="sub">AgentLens patches your provider client at import time. No changes to existing agent code.</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">01</div>
+      <h3>Init before your client</h3>
+      <p>Call <code>agentlens.init()</code> before creating your Anthropic or OpenAI client. It patches the class — every call from that point is captured.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">02</div>
+      <h3>Wrap your agent function</h3>
+      <p>Add <code>@agentlens.run(name="...")</code> to your agent. All LLM calls, tool calls, errors, and costs inside it are grouped into one run.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">03</div>
+      <h3>Diagnose when it breaks</h3>
+      <p>Run <code>agentlens diagnose &lt;run_id&gt;</code>. Get the exact failure step, why the agent made that decision, and a one-line fix.</p>
+    </div>
+  </div>
+</section>
+
+<!-- CODE SNIPPET -->
+<section id="install" class="tight">
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">python</span>
+      <span>quickstart.py</span>
+    </div>
+    <pre><span class="kw">import</span> agentlens
+<span class="kw">import</span> anthropic
+
+agentlens.<span class="fn">init</span>()                     <span class="cm"># patches Anthropic + OpenAI + async variants</span>
+
+client = anthropic.<span class="fn">Anthropic</span>()       <span class="cm"># captured automatically from here</span>
+
+<span class="dec">@agentlens.run</span>(<span class="fn">name</span>=<span class="str">"support_agent"</span>)  <span class="cm"># works with sync and async</span>
+<span class="kw">def</span> <span class="fn">run_agent</span>(query: <span class="fn">str</span>):
+    response = client.messages.<span class="fn">create</span>(
+        model=<span class="str">"claude-3-5-sonnet-latest"</span>,
+        max_tokens=<span class="fn">512</span>,
+        tools=[...],
+        messages=[{<span class="str">"role"</span>: <span class="str">"user"</span>, <span class="str">"content"</span>: query}],
+    )
+    <span class="cm"># record tool results after executing them</span>
+    agentlens.<span class="fn">record_tool_result</span>(tool_name=..., output=..., tool_use_id=...)
+    <span class="kw">return</span> response
+
+<span class="cm"># LangGraph — one extra line</span>
+agentlens.<span class="fn">patch_langgraph</span>()          <span class="cm"># call before graph.compile()</span>
+app = graph.<span class="fn">compile</span>()               <span class="cm"># every node is now a span</span></pre>
+  </div>
+</section>
+
+<!-- WHAT IT CATCHES -->
+<section>
+  <div class="section-label">// what it catches</div>
+  <h2>Six failure categories,<br>detected automatically.</h2>
+  <p class="sub">No configuration. No labelling. AgentLens reads the trace and finds the pattern.</p>
+
+  <div class="failures">
+    <div class="fail-card">
+      <span class="fail-tag">tool_selection</span>
+      <h3>Wrong tool chosen</h3>
+      <p>Agent picked the wrong tool because two tools had similar descriptions. The most common silent failure in multi-tool agents.</p>
+    </div>
+    <div class="fail-card">
+      <span class="fail-tag">loop</span>
+      <h3>Retried without exit</h3>
+      <p>Agent called the same tool with the same inputs multiple times instead of changing strategy after a failure.</p>
+    </div>
+    <div class="fail-card">
+      <span class="fail-tag">cascade</span>
+      <h3>Bad data propagated</h3>
+      <p>An upstream tool returned stale or null data. A downstream step used it and crashed. The real bug was 3 steps earlier.</p>
+    </div>
+    <div class="fail-card">
+      <span class="fail-tag">context_pollution</span>
+      <h3>Contradictory instructions</h3>
+      <p>Conflicting instructions in the system prompt diluted the agent's goal before it even started tool selection.</p>
+    </div>
+    <div class="fail-card">
+      <span class="fail-tag">state_drift</span>
+      <h3>Goal abandoned mid-run</h3>
+      <p>Agent started on the right task but lost track of the original goal across a long multi-step conversation.</p>
+    </div>
+    <div class="fail-card">
+      <span class="fail-tag">overflow</span>
+      <h3>Context window truncated</h3>
+      <p>Critical early context was pushed out of the context window before the key decision was made.</p>
+    </div>
+  </div>
+</section>
+
+<!-- DIAGNOSIS EXAMPLES -->
+<section id="examples">
+  <div class="section-label">// real examples</div>
+  <h2>Same tool. Five frameworks.</h2>
+  <p class="sub">AgentLens diagnosed these from real traces across different frameworks — same output format every time.</p>
+
+  <div class="diag-grid">
+    <div class="diag-card">
+      <div class="diag-header">
+        <span class="diag-fw">LangGraph</span>
+        <span class="diag-cat">tool_selection</span>
+      </div>
+      <div class="diag-body">
+        <div><span class="diag-label">step  </span><span class="diag-val">2 (search_web)</span></div>
+        <div><span class="diag-label">conf  </span><span class="diag-val" style="color:var(--green)">0.90</span></div>
+        <div class="diag-fix">Both tools had identical descriptions. Agent picked external web search for a local record lookup.</div>
+        <div class="diag-conf">
+          <div style="color:var(--text3);font-size:10px">confidence</div>
+          <div class="conf-bar-wrap"><div class="conf-bar" style="width:90%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="diag-card">
+      <div class="diag-header">
+        <span class="diag-fw">AutoGen</span>
+        <span class="diag-cat">loop</span>
+      </div>
+      <div class="diag-body">
+        <div><span class="diag-label">step  </span><span class="diag-val">7 (fetch_data)</span></div>
+        <div><span class="diag-label">conf  </span><span class="diag-val" style="color:var(--green)">0.95</span></div>
+        <div class="diag-fix">Step 7 repeats the same tool call first made at step 3. No exit condition after repeated failure.</div>
+        <div class="diag-conf">
+          <div style="color:var(--text3);font-size:10px">confidence</div>
+          <div class="conf-bar-wrap"><div class="conf-bar" style="width:95%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="diag-card">
+      <div class="diag-header">
+        <span class="diag-fw">PydanticAI</span>
+        <span class="diag-cat">cascade</span>
+      </div>
+      <div class="diag-body">
+        <div><span class="diag-label">step  </span><span class="diag-val">3 (get_user_profile)</span></div>
+        <div><span class="diag-label">conf  </span><span class="diag-val" style="color:var(--green)">0.90</span></div>
+        <div class="diag-fix">Profile returned email: null (stale cache). send_email used it at step 6 and crashed.</div>
+        <div class="diag-conf">
+          <div style="color:var(--text3);font-size:10px">confidence</div>
+          <div class="conf-bar-wrap"><div class="conf-bar" style="width:90%"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ALSO DETECTS -->
+<section class="tight">
+  <hr class="divider" />
+  <br>
+  <div class="section-label">// also detects</div>
+  <h2>Hallucinations, too.</h2>
+  <p class="sub">AgentLens checks every tool call against the tool schema. If the agent invents a parameter that doesn't exist, it's flagged immediately.</p>
+  <div class="terminal" style="max-width:620px">
+    <div class="term-bar">
+      <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+      <span class="term-title">hallucination detection</span>
+    </div>
+    <div class="term-body">
+<p><span class="t-section">HALLUCINATIONS DETECTED:</span></p>
+<span class="t-gap"></span>
+<p>  <span class="t-bad">[HIGH]</span> <span class="t-out">step 2 — invented param:</span></p>
+<p>  <span class="t-out">  'query_db' was called with ['limit', 'sort_by']</span></p>
+<p>  <span class="t-out">  which are not in its schema.</span></p>
+<p>  <span class="t-dim">  Valid params: ['customer_id', 'field']</span></p>
+<span class="t-gap"></span>
+<p>  <span class="t-warn">[MED]</span>  <span class="t-out">step 4 — context contradiction:</span></p>
+<p>  <span class="t-out">  LLM claims "order found" but get_order</span></p>
+<p>  <span class="t-out">  returned status: "not found" at step 3.</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- CLI -->
+<section>
+  <div class="section-label">// cli</div>
+  <h2>Everything from the terminal.</h2>
+  <p class="sub">No dashboard to sign in to. No data leaving your machine.</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">shell</span>
+    </div>
+    <pre><span class="t-prompt" style="color:var(--green)">$</span> agentlens runs list          <span class="cm"># all recent runs with status + cost</span>
+<span class="t-prompt" style="color:var(--green)">$</span> agentlens runs show &lt;id&gt;     <span class="cm"># full span detail — every LLM call, tool call, error</span>
+<span class="t-prompt" style="color:var(--green)">$</span> agentlens diagnose &lt;id&gt;     <span class="cm"># root cause + fix</span>
+<span class="t-prompt" style="color:var(--green)">$</span> agentlens stats              <span class="cm"># token usage, latency, cost across all runs</span>
+<span class="t-prompt" style="color:var(--green)">$</span> agentlens anonymize &lt;id&gt;    <span class="cm"># redact secrets before sharing</span>
+<span class="t-prompt" style="color:var(--green)">$</span> agentlens evaluate           <span class="cm"># accuracy check against your test cases</span></pre>
+  </div>
+</section>
+
+<!-- CTA -->
+<section style="text-align:center; padding-bottom: 96px;">
+  <hr class="divider" style="margin-bottom: 64px;" />
+  <div class="section-label" style="text-align:center">// get started</div>
+  <h2>Your agent broke.<br>Find out why in 30 seconds.</h2>
+  <p class="sub" style="margin: 16px auto 36px;">Free. Local. No account.</p>
+
+  <div class="install-wrap" style="margin: 0 auto 16px;">
+    <span class="install-prompt">$</span>
+    <span class="install-cmd">pip install agentlens</span>
+    <button class="copy-btn" onclick="copyInstall()" title="Copy">⎘</button>
+  </div>
+  <br>
+  <a href="https://github.com/abishekgiri/agentlens" target="_blank" style="color:var(--text2); font-size:13px; font-family:var(--mono);">
+    ★ Star on GitHub →
+  </a>
+</section>
+
+<footer>
+  <p>agentlens.run · Open source · <a href="https://github.com/abishekgiri/agentlens" target="_blank">GitHub</a> · MIT License</p>
+</footer>
+
+<script>
+  function copyInstall() {
+    navigator.clipboard.writeText('pip install agentlens').then(() => {
+      const btn = document.querySelector('.copy-btn');
+      btn.textContent = '✓';
+      btn.style.color = 'var(--green)';
+      setTimeout(() => { btn.textContent = '⎘'; btn.style.color = ''; }, 1800);
+    });
+  }
+</script>
+</body>
+</html>
