@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from .pricing import compute_cost_usd
+
 
 RUNS_DIR = Path(".agentlens") / "runs"
 _current_run: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
@@ -74,10 +76,18 @@ class AgentLensClient:
         return anthropic.Anthropic(api_key=api_key)
 
 
-def init(api_key: str | None = None) -> None:
-    """Enable local capture for supported SDKs already available in this environment."""
+def init(
+    api_key: str | None = None,
+    parent_context: dict[str, str] | None = None,
+) -> None:
+    """Enable local capture for supported SDKs already available in this environment.
 
+    Pass ``parent_context=agentlens.get_trace_context()`` from a parent process to
+    stitch sub-agent runs into the parent trace.
+    """
     _config["api_key"] = api_key
+    if parent_context and parent_context.get("parent_run_id"):
+        _config["parent_run_id"] = parent_context["parent_run_id"]
     _patch_anthropic()
     _patch_openai()
 
@@ -90,7 +100,7 @@ def run(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
 
             @functools.wraps(func)
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
-                run_data = start_run(name=name)
+                run_data = start_run(name=name, parent_run_id=_config.get("parent_run_id"))
                 token = _current_run.set(run_data)
                 try:
                     result = await func(*args, **kwargs)
@@ -109,7 +119,7 @@ def run(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
 
         @functools.wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
-            run_data = start_run(name=name)
+            run_data = start_run(name=name, parent_run_id=_config.get("parent_run_id"))
             token = _current_run.set(run_data)
             try:
                 result = func(*args, **kwargs)
@@ -129,8 +139,8 @@ def run(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     return decorator
 
 
-def start_run(name: str = "default") -> dict[str, Any]:
-    return {
+def start_run(name: str = "default", parent_run_id: str | None = None) -> dict[str, Any]:
+    data: dict[str, Any] = {
         "run_id": str(uuid.uuid4()),
         "name": name,
         "started_at": _now_iso(),
@@ -138,6 +148,41 @@ def start_run(name: str = "default") -> dict[str, Any]:
         "status": "running",
         "spans": [],
     }
+    if parent_run_id:
+        data["parent_run_id"] = parent_run_id
+    return data
+
+
+def get_trace_context() -> dict[str, str] | None:
+    """Return a propagation context dict for passing to sub-agents / child runs.
+
+    Usage::
+
+        ctx = agentlens.get_trace_context()
+        # pass ctx to the child process / service
+        agentlens.init(parent_context=ctx)
+    """
+    run_data = _current_run.get()
+    if run_data is None:
+        return None
+    return {"parent_run_id": run_data["run_id"]}
+
+
+def record_memory_snapshot(label: str, state: dict[str, Any]) -> None:
+    """Capture a snapshot of the agent's memory / state at the current point in time.
+
+    Usage::
+
+        agentlens.record_memory_snapshot("after_lookup", {"customer": "alex", "status": "active"})
+    """
+    append_span(
+        {
+            "type": "memory_snapshot",
+            "ts": _now_iso(),
+            "label": label,
+            "state": _to_jsonable(state),
+        }
+    )
 
 
 def current_run() -> dict[str, Any]:
@@ -324,6 +369,8 @@ class _AnthropicMessagesProxy:
         try:
             response = self._messages.create(**kwargs)
             response_content = _to_jsonable(getattr(response, "content", None))
+            usage = _to_jsonable(getattr(response, "usage", None))
+            model = kwargs.get("model")
             append_span(
                 {
                     "type": "llm_call",
@@ -332,10 +379,11 @@ class _AnthropicMessagesProxy:
                     "latency_ms": _elapsed_ms(started),
                     "input_messages": _to_jsonable(kwargs.get("messages", [])),
                     "tools": _to_jsonable(kwargs.get("tools", [])),
-                    "model": kwargs.get("model"),
+                    "model": model,
                     "response_content": response_content,
                     "stop_reason": getattr(response, "stop_reason", None),
-                    "usage": _to_jsonable(getattr(response, "usage", None)),
+                    "usage": usage,
+                    "cost_usd": compute_cost_usd(model, usage if isinstance(usage, dict) else {}),
                 }
             )
             capture_anthropic_tool_calls(response_content)
@@ -344,8 +392,68 @@ class _AnthropicMessagesProxy:
             capture_error(exc, context=_anthropic_context(kwargs), latency_ms=_elapsed_ms(started))
             raise
 
+    def stream(self, **kwargs: Any) -> "_AnthropicStreamContext":
+        """Wrap Anthropic streaming so the span is captured when the stream closes."""
+        started = time.perf_counter()
+        capture_tool_results_from_messages(kwargs.get("messages", []), provider="anthropic")
+        try:
+            ctx = self._messages.stream(**kwargs)
+        except Exception as exc:
+            capture_error(exc, context=_anthropic_context(kwargs), latency_ms=_elapsed_ms(started))
+            raise
+        return _AnthropicStreamContext(ctx, kwargs, started)
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self._messages, name)
+
+
+class _AnthropicStreamContext:
+    """Context manager wrapper that saves a span when Anthropic streaming completes."""
+
+    def __init__(self, ctx: Any, kwargs: dict[str, Any], started: float) -> None:
+        self._ctx = ctx
+        self._kwargs = kwargs
+        self._started = started
+        self._stream: Any = None
+
+    def __enter__(self) -> Any:
+        self._stream = self._ctx.__enter__()
+        return self._stream
+
+    def __exit__(self, *args: Any) -> Any:
+        result = self._ctx.__exit__(*args)
+        self._save_span()
+        return result
+
+    def _save_span(self) -> None:
+        if self._stream is None:
+            return
+        try:
+            message = getattr(self._stream, "get_final_message", lambda: None)()
+            if message is None:
+                return
+            response_content = _to_jsonable(getattr(message, "content", None))
+            usage = _to_jsonable(getattr(message, "usage", None))
+            model = self._kwargs.get("model")
+            append_span(
+                {
+                    "type": "llm_call",
+                    "provider": "anthropic",
+                    "ts": _now_iso(),
+                    "latency_ms": _elapsed_ms(self._started),
+                    "input_messages": _to_jsonable(self._kwargs.get("messages", [])),
+                    "tools": _to_jsonable(self._kwargs.get("tools", [])),
+                    "model": model,
+                    "response_content": response_content,
+                    "stop_reason": getattr(message, "stop_reason", None),
+                    "usage": usage,
+                    "cost_usd": compute_cost_usd(model, usage if isinstance(usage, dict) else {}),
+                    "streaming": True,
+                }
+            )
+            capture_anthropic_tool_calls(response_content)
+        except Exception:
+            pass
 
 
 def _patch_openai() -> None:
@@ -391,10 +499,14 @@ class _OpenAICompletionsProxy:
         self._completions = completions
 
     def create(self, **kwargs: Any) -> Any:
+        if kwargs.get("stream"):
+            return self._create_stream(**kwargs)
         started = time.perf_counter()
         try:
             response = self._completions.create(**kwargs)
             response_json = _to_jsonable(response)
+            usage = response_json.get("usage") if isinstance(response_json, dict) else None
+            model = kwargs.get("model")
             append_span(
                 {
                     "type": "llm_call",
@@ -403,10 +515,11 @@ class _OpenAICompletionsProxy:
                     "latency_ms": _elapsed_ms(started),
                     "input_messages": _to_jsonable(kwargs.get("messages", [])),
                     "tools": _to_jsonable(kwargs.get("tools", kwargs.get("functions", []))),
-                    "model": kwargs.get("model"),
+                    "model": model,
                     "response_content": response_json,
                     "stop_reason": _first_choice_stop_reason(response_json),
-                    "usage": response_json.get("usage") if isinstance(response_json, dict) else None,
+                    "usage": usage,
+                    "cost_usd": compute_cost_usd(model, usage if isinstance(usage, dict) else {}),
                 }
             )
             capture_openai_tool_calls(response_json)
@@ -415,8 +528,93 @@ class _OpenAICompletionsProxy:
             capture_error(exc, context=_openai_context(kwargs), latency_ms=_elapsed_ms(started))
             raise
 
+    def _create_stream(self, **kwargs: Any) -> "_OpenAIStreamWrapper":
+        started = time.perf_counter()
+        try:
+            raw_stream = self._completions.create(**kwargs)
+        except Exception as exc:
+            capture_error(exc, context=_openai_context(kwargs), latency_ms=_elapsed_ms(started))
+            raise
+        return _OpenAIStreamWrapper(raw_stream, kwargs, started)
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self._completions, name)
+
+
+class _OpenAIStreamWrapper:
+    """Wraps an OpenAI streaming response and saves a span on completion."""
+
+    def __init__(self, stream: Any, kwargs: dict[str, Any], started: float) -> None:
+        self._stream = stream
+        self._kwargs = kwargs
+        self._started = started
+        self._chunks: list[Any] = []
+        self._finalized = False
+        self._iter: Any = None
+
+    def __iter__(self) -> Any:
+        self._iter = iter(self._stream)
+        return self
+
+    def __next__(self) -> Any:
+        try:
+            chunk = next(self._iter)
+            self._chunks.append(chunk)
+            return chunk
+        except StopIteration:
+            self._finalize()
+            raise
+
+    def __enter__(self) -> Any:
+        if hasattr(self._stream, "__enter__"):
+            self._stream.__enter__()
+        return self
+
+    def __exit__(self, *args: Any) -> Any:
+        result = None
+        if hasattr(self._stream, "__exit__"):
+            result = self._stream.__exit__(*args)
+        self._finalize()
+        return result
+
+    def _finalize(self) -> None:
+        if self._finalized:
+            return
+        self._finalized = True
+        try:
+            accumulated = ""
+            usage: dict[str, Any] | None = None
+            for chunk in self._chunks:
+                chunk_json = _to_jsonable(chunk)
+                if isinstance(chunk_json, dict):
+                    if chunk_json.get("usage"):
+                        usage = chunk_json["usage"]
+                    choices = chunk_json.get("choices", [])
+                    if isinstance(choices, list) and choices:
+                        delta = choices[0].get("delta", {}) if isinstance(choices[0], dict) else {}
+                        content = delta.get("content") if isinstance(delta, dict) else None
+                        if content:
+                            accumulated += content
+            model = self._kwargs.get("model")
+            append_span(
+                {
+                    "type": "llm_call",
+                    "provider": "openai",
+                    "ts": _now_iso(),
+                    "latency_ms": _elapsed_ms(self._started),
+                    "input_messages": _to_jsonable(self._kwargs.get("messages", [])),
+                    "tools": _to_jsonable(self._kwargs.get("tools", self._kwargs.get("functions", []))),
+                    "model": model,
+                    "response_content": accumulated,
+                    "stop_reason": None,
+                    "usage": _to_jsonable(usage),
+                    "cost_usd": compute_cost_usd(model, usage if isinstance(usage, dict) else {}),
+                    "streaming": True,
+                    "chunk_count": len(self._chunks),
+                }
+            )
+        except Exception:
+            pass
 
 
 class _OpenAIResponsesProxy:
@@ -428,6 +626,8 @@ class _OpenAIResponsesProxy:
         try:
             response = self._responses.create(**kwargs)
             response_json = _to_jsonable(response)
+            usage = response_json.get("usage") if isinstance(response_json, dict) else None
+            model = kwargs.get("model")
             append_span(
                 {
                     "type": "llm_call",
@@ -436,10 +636,11 @@ class _OpenAIResponsesProxy:
                     "latency_ms": _elapsed_ms(started),
                     "input_messages": _to_jsonable(kwargs.get("input")),
                     "tools": _to_jsonable(kwargs.get("tools", [])),
-                    "model": kwargs.get("model"),
+                    "model": model,
                     "response_content": response_json,
                     "stop_reason": response_json.get("status") if isinstance(response_json, dict) else None,
-                    "usage": response_json.get("usage") if isinstance(response_json, dict) else None,
+                    "usage": usage,
+                    "cost_usd": compute_cost_usd(model, usage if isinstance(usage, dict) else {}),
                 }
             )
             capture_openai_tool_calls(response_json)

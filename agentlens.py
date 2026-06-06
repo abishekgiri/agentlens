@@ -12,12 +12,25 @@ from typing import Any
 
 from agentlens_engine.diagnose import diagnose_run
 from agentlens_engine.evaluate import evaluate_cases, print_evaluation
-from agentlens_sdk import AgentLensClient, init, load_run, load_runs, record_tool_result, run, save_run
+from agentlens_engine.timeline import generate_html
+from agentlens_sdk import (
+    AgentLensClient,
+    get_trace_context,
+    init,
+    load_run,
+    load_runs,
+    record_memory_snapshot,
+    record_tool_result,
+    run,
+    save_run,
+)
 from agentlens_sdk.collector import RUNS_DIR, AmbiguousRunIdError
 
 __all__ = [
     "AgentLensClient",
+    "get_trace_context",
     "init",
+    "record_memory_snapshot",
     "record_tool_result",
     "run",
     "save_run",
@@ -43,6 +56,15 @@ def main() -> None:
     runs_subparsers.add_parser("list")
     show_parser = runs_subparsers.add_parser("show")
     show_parser.add_argument("run_id")
+    view_parser = runs_subparsers.add_parser("view")
+    view_parser.add_argument("run_id")
+    prompt_parser = runs_subparsers.add_parser("prompt")
+    prompt_parser.add_argument("run_id")
+    prompt_parser.add_argument("--step", type=int, default=None, help="Show only this LLM call step (1-indexed)")
+    replay_parser = runs_subparsers.add_parser("replay")
+    replay_parser.add_argument("run_id")
+    stitch_parser = runs_subparsers.add_parser("stitch")
+    stitch_parser.add_argument("run_id")
 
     diagnose_parser = subparsers.add_parser("diagnose")
     diagnose_parser.add_argument("run_id")
@@ -63,6 +85,22 @@ def main() -> None:
 
     if args.command == "runs" and args.runs_command == "show":
         _print_run_detail(args.run_id)
+        return
+
+    if args.command == "runs" and args.runs_command == "view":
+        _open_timeline(args.run_id)
+        return
+
+    if args.command == "runs" and args.runs_command == "prompt":
+        _print_prompt_viewer(args.run_id, step=args.step)
+        return
+
+    if args.command == "runs" and args.runs_command == "replay":
+        _replay_run(args.run_id)
+        return
+
+    if args.command == "runs" and args.runs_command == "stitch":
+        _print_stitch(args.run_id)
         return
 
     if args.command == "diagnose":
@@ -357,6 +395,277 @@ def _print_run_stats(item: dict[str, Any]) -> None:
     print()
     print("Models:")
     _print_count_map(summary["models"])
+
+
+def _open_timeline(run_id: str) -> None:
+    """Generate a self-contained HTML timeline and open it in the default browser."""
+    import tempfile
+    import webbrowser
+
+    item = _load_run_or_report(run_id)
+    if item is None:
+        return
+    html = generate_html(item)
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".html", delete=False, encoding="utf-8"
+    ) as tmp:
+        tmp.write(html)
+        tmp_path = tmp.name
+    webbrowser.open(f"file://{tmp_path}")
+    print(f"Timeline opened in browser: {tmp_path}")
+
+
+def _print_prompt_viewer(run_id: str, step: int | None = None) -> None:
+    """Print the exact LLM prompt(s) sent during a run in readable form."""
+    item = _load_run_or_report(run_id)
+    if item is None:
+        return
+
+    spans = [s for s in (item.get("spans") or []) if isinstance(s, dict) and s.get("type") == "llm_call"]
+    if not spans:
+        print("No LLM calls found in this run.")
+        return
+
+    if step is not None:
+        idx = step - 1
+        if idx < 0 or idx >= len(spans):
+            print(f"Step {step} out of range (run has {len(spans)} LLM call(s)).")
+            return
+        spans = [spans[idx]]
+        start_idx = idx
+    else:
+        start_idx = 0
+
+    print(f"AgentLens LLM Prompt Viewer — {item.get('name', run_id)}")
+    print("=" * 60)
+
+    for offset, span in enumerate(spans):
+        step_num = start_idx + offset + 1
+        model = span.get("model") or "unknown"
+        provider = span.get("provider") or ""
+        print(f"\nStep {step_num}: {provider}/{model}")
+        print("─" * 60)
+
+        messages = span.get("input_messages") or []
+        if messages:
+            for msg in messages:
+                if not isinstance(msg, dict):
+                    continue
+                role = (msg.get("role") or "unknown").upper()
+                content = msg.get("content")
+                if isinstance(content, str):
+                    body = content
+                elif isinstance(content, list):
+                    parts = []
+                    for block in content:
+                        if isinstance(block, dict):
+                            if block.get("type") == "text":
+                                parts.append(block.get("text", ""))
+                            elif block.get("type") == "tool_result":
+                                parts.append(f"[tool_result: {block.get('tool_use_id')}]")
+                            elif block.get("type") == "tool_use":
+                                parts.append(f"[tool_use: {block.get('name')}]")
+                            else:
+                                parts.append(json.dumps(block))
+                        else:
+                            parts.append(str(block))
+                    body = "\n".join(parts)
+                else:
+                    body = json.dumps(content, default=str)
+                print(f"[{role}]")
+                print(body)
+                print()
+        else:
+            print("(no messages captured)")
+
+        tools = span.get("tools") or []
+        if tools:
+            print(f"Tools available ({len(tools)}):")
+            for t in tools:
+                if isinstance(t, dict):
+                    name = t.get("name") or (t.get("function") or {}).get("name") or "?"
+                    desc = t.get("description") or (t.get("function") or {}).get("description") or ""
+                    print(f"  • {name}" + (f" — {desc}" if desc else ""))
+            print()
+
+        resp = span.get("response_content")
+        if resp is not None:
+            print("Response:")
+            if isinstance(resp, list):
+                for block in resp:
+                    if isinstance(block, dict):
+                        btype = block.get("type")
+                        if btype == "text":
+                            print(f"  [text] {block.get('text', '')}")
+                        elif btype == "tool_use":
+                            print(f"  [tool_use] {block.get('name')}({json.dumps(block.get('input', {}), default=str)})")
+                        else:
+                            print(f"  {json.dumps(block, default=str)}")
+                    else:
+                        print(f"  {block}")
+            else:
+                print(f"  {_compact(resp)}")
+            stop = span.get("stop_reason")
+            if stop:
+                print(f"  Stop reason: {stop}")
+
+        usage = span.get("usage")
+        cost = span.get("cost_usd") or 0
+        if isinstance(usage, dict) and (usage.get("input_tokens") or usage.get("prompt_tokens")):
+            inp = (usage.get("input_tokens") or 0) + (usage.get("prompt_tokens") or 0)
+            out = (usage.get("output_tokens") or 0) + (usage.get("completion_tokens") or 0)
+            cost_str = f"  Cost: ${cost:.6f}" if cost > 0 else ""
+            print(f"\n  Tokens: {inp} in / {out} out{cost_str}")
+
+
+def _replay_run(run_id: str) -> None:
+    """Interactive step-by-step replay of a run. Press ENTER to advance."""
+    item = _load_run_or_report(run_id)
+    if item is None:
+        return
+
+    spans = [s for s in (item.get("spans") or []) if isinstance(s, dict)]
+    if not spans:
+        print("No spans in this run.")
+        return
+
+    print(f"AgentLens Session Replay — {item.get('name', run_id)}")
+    print("=" * 60)
+    print(f"  {len(spans)} span(s)  ·  status: {item.get('status', '?')}")
+    print()
+    print("Press ENTER to advance through each span. Ctrl+C to quit.")
+
+    for i, span in enumerate(spans, start=1):
+        try:
+            input(f"\n[Press ENTER for step {i}/{len(spans)}]")
+        except (KeyboardInterrupt, EOFError):
+            print("\nReplay stopped.")
+            return
+
+        stype = span.get("type", "unknown")
+        print(f"\n{'━' * 60}")
+        print(f"Step {i}/{len(spans)}  ·  {stype.upper()}")
+        print('━' * 60)
+
+        if stype == "llm_call":
+            print(f"Provider : {span.get('provider', '?')}")
+            print(f"Model    : {span.get('model', '?')}")
+            lat = span.get("latency_ms")
+            if lat:
+                print(f"Latency  : {_format_ms(lat)}")
+            cost = span.get("cost_usd") or 0
+            if cost > 0:
+                print(f"Cost     : ${cost:.6f}")
+
+            messages = span.get("input_messages") or []
+            if messages:
+                print(f"\nWhat the agent knows ({len(messages)} message(s)):")
+                for msg in messages[-3:]:  # Show last 3 to keep it concise
+                    if not isinstance(msg, dict):
+                        continue
+                    role = (msg.get("role") or "?").upper()
+                    content = msg.get("content", "")
+                    body = content if isinstance(content, str) else json.dumps(content, default=str)
+                    print(f"  [{role}] {body[:200]}{'…' if len(body) > 200 else ''}")
+
+            tools = span.get("tools") or []
+            if tools:
+                names = [
+                    t.get("name") or (t.get("function") or {}).get("name") or "?"
+                    for t in tools if isinstance(t, dict)
+                ]
+                print(f"\nTools available: {', '.join(names)}")
+
+            resp = span.get("response_content")
+            if resp:
+                stop = span.get("stop_reason", "")
+                print(f"\n  ↳ Stop reason: {stop}")
+                if isinstance(resp, list):
+                    for block in resp:
+                        if isinstance(block, dict):
+                            if block.get("type") == "tool_use":
+                                print(f"  ↳ Called tool: {block.get('name')}({json.dumps(block.get('input', {}), default=str)[:100]})")
+                            elif block.get("type") == "text":
+                                text = (block.get("text") or "")[:150]
+                                print(f"  ↳ Response text: {text}{'…' if len(block.get('text',''))>150 else ''}")
+
+        elif stype == "tool_call":
+            print(f"Tool   : {span.get('tool_name', '?')}")
+            inp = span.get("input")
+            out = span.get("output")
+            if inp is not None:
+                print(f"Input  : {_compact(inp)}")
+            if out is not None:
+                is_err = isinstance(out, dict) and (out.get("status") == "error" or out.get("error"))
+                prefix = "⚠ Output (ERROR)" if is_err else "Output"
+                print(f"{prefix}: {_compact(out)}")
+
+        elif stype == "error":
+            print(f"⚠ Error: {span.get('error', 'unknown')}")
+            ctx = span.get("context")
+            if ctx:
+                print(f"  Context: {_compact(ctx)}")
+
+        elif stype == "memory_snapshot":
+            label = span.get("label", "")
+            print(f"Label : {label}")
+            state = span.get("state")
+            if state:
+                print(f"State : {_compact(state)}")
+
+        else:
+            print(_compact(span))
+
+    print(f"\n{'═' * 60}")
+    print(f"End of replay  ·  status: {item.get('status', '?')}")
+    llm_n = sum(1 for s in spans if s.get("type") == "llm_call")
+    tool_n = sum(1 for s in spans if s.get("type") == "tool_call")
+    err_n = sum(1 for s in spans if s.get("type") == "error")
+    print(f"Summary: {llm_n} LLM call(s), {tool_n} tool call(s), {err_n} error(s)")
+
+
+def _print_stitch(run_id: str) -> None:
+    """Show a multi-agent trace tree rooted at this run."""
+    root = _load_run_or_report(run_id)
+    if root is None:
+        return
+
+    all_runs = load_runs()
+
+    def children_of(rid: str) -> list[dict[str, Any]]:
+        return [r for r in all_runs if r.get("parent_run_id") == rid]
+
+    def print_tree(r: dict[str, Any], prefix: str = "", is_last: bool = True) -> None:
+        connector = "└── " if is_last else "├── "
+        spans = r.get("spans") or []
+        status = r.get("status", "?")
+        status_icon = {"success": "✓", "error": "✗", "running": "○"}.get(status, "?")
+        name = r.get("name", "?")[:30]
+        rid_short = (r.get("run_id") or "")[:8]
+        n_spans = len([s for s in spans if isinstance(s, dict)])
+        print(f"{prefix}{connector}{rid_short}  {name:30}  [{n_spans} spans]  {status_icon} {status}")
+        kids = children_of(r.get("run_id", ""))
+        child_prefix = prefix + ("    " if is_last else "│   ")
+        for j, child in enumerate(kids):
+            print_tree(child, child_prefix, is_last=(j == len(kids) - 1))
+
+    print(f"AgentLens Multi-Agent Trace Tree — {root.get('name', run_id)}")
+    print("=" * 60)
+    print()
+    # Print root without connector
+    spans = root.get("spans") or []
+    n_spans = len([s for s in spans if isinstance(s, dict)])
+    status = root.get("status", "?")
+    status_icon = {"success": "✓", "error": "✗", "running": "○"}.get(status, "?")
+    print(f"{(root.get('run_id') or '')[:8]}  {root.get('name','?')[:30]:30}  [{n_spans} spans]  {status_icon} {status}  (root)")
+    kids = children_of(root.get("run_id", ""))
+    if not kids:
+        print("\n  No child runs found. Child runs must be started with parent_context set.")
+        print("  Example: agentlens.init(parent_context=agentlens.get_trace_context())")
+        return
+    for j, child in enumerate(kids):
+        print_tree(child, "", is_last=(j == len(kids) - 1))
+    print()
 
 
 def _load_run_or_report(run_id: str) -> dict[str, Any] | None:
