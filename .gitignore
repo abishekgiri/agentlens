@@ -7,3 +7,5 @@ agentlens_run.json
 .agentlens/
 *.egg-info/
 *.anonymized.json
+agentlens_sdk_ts/node_modules/
+agentlens_sdk_ts/dist/
