@@ -12,6 +12,7 @@ from .collector import (
     save_run,
     start_run,
 )
+from .langgraph import patch_langgraph
 
 __all__ = [
     "AgentLensClient",
@@ -19,6 +20,7 @@ __all__ = [
     "init",
     "load_run",
     "load_runs",
+    "patch_langgraph",
     "record_memory_snapshot",
     "record_tool_result",
     "run",

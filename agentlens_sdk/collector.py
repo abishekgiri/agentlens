@@ -89,7 +89,9 @@ def init(
     if parent_context and parent_context.get("parent_run_id"):
         _config["parent_run_id"] = parent_context["parent_run_id"]
     _patch_anthropic()
+    _patch_anthropic_async()
     _patch_openai()
+    _patch_openai_async()
 
 
 def run(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
@@ -359,6 +361,34 @@ def _patch_anthropic() -> None:
     _config["patched"].add("anthropic")
 
 
+def _patch_anthropic_async() -> None:
+    """Patch anthropic.AsyncAnthropic so async agents are captured."""
+    try:
+        import anthropic
+    except ImportError:
+        return
+
+    if not hasattr(anthropic, "AsyncAnthropic"):
+        return
+
+    if "anthropic_async" in _config["patched"]:
+        return
+
+    original_async = anthropic.AsyncAnthropic
+    _config["originals"]["anthropic.AsyncAnthropic"] = original_async
+
+    class AgentLensAsyncAnthropic:
+        def __init__(self, *args: Any, **kwargs: Any):
+            self._agentlens_client = original_async(*args, **kwargs)
+            self.messages = _AsyncAnthropicMessagesProxy(self._agentlens_client.messages)
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(self._agentlens_client, name)
+
+    anthropic.AsyncAnthropic = AgentLensAsyncAnthropic
+    _config["patched"].add("anthropic_async")
+
+
 class _AnthropicMessagesProxy:
     def __init__(self, messages: Any):
         self._messages = messages
@@ -483,6 +513,36 @@ def _patch_openai() -> None:
 
     openai.OpenAI = AgentLensOpenAI
     _config["patched"].add("openai")
+
+
+def _patch_openai_async() -> None:
+    """Patch openai.AsyncOpenAI so async agents are captured."""
+    try:
+        import openai
+    except ImportError:
+        return
+
+    if not hasattr(openai, "AsyncOpenAI"):
+        return
+
+    if "openai_async" in _config["patched"]:
+        return
+
+    original_async = openai.AsyncOpenAI
+    _config["originals"]["openai.AsyncOpenAI"] = original_async
+
+    class AgentLensAsyncOpenAI:
+        def __init__(self, *args: Any, **kwargs: Any):
+            self._agentlens_client = original_async(*args, **kwargs)
+            self.chat = _AsyncOpenAIChatProxy(self._agentlens_client.chat)
+            if hasattr(self._agentlens_client, "responses"):
+                self.responses = _AsyncOpenAIResponsesProxy(self._agentlens_client.responses)
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(self._agentlens_client, name)
+
+    openai.AsyncOpenAI = AgentLensAsyncOpenAI
+    _config["patched"].add("openai_async")
 
 
 class _OpenAIChatProxy:
@@ -641,6 +701,173 @@ class _OpenAIResponsesProxy:
                     "stop_reason": response_json.get("status") if isinstance(response_json, dict) else None,
                     "usage": usage,
                     "cost_usd": compute_cost_usd(model, usage if isinstance(usage, dict) else {}),
+                }
+            )
+            capture_openai_tool_calls(response_json)
+            return response
+        except Exception as exc:
+            capture_error(exc, context=_openai_context(kwargs), latency_ms=_elapsed_ms(started))
+            raise
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._responses, name)
+
+
+class _AsyncAnthropicMessagesProxy:
+    """Async proxy for anthropic.AsyncAnthropic().messages — mirrors _AnthropicMessagesProxy."""
+
+    def __init__(self, messages: Any) -> None:
+        self._messages = messages
+
+    async def create(self, **kwargs: Any) -> Any:
+        started = time.perf_counter()
+        capture_tool_results_from_messages(kwargs.get("messages", []), provider="anthropic")
+        try:
+            response = await self._messages.create(**kwargs)
+            response_content = _to_jsonable(getattr(response, "content", None))
+            usage = _to_jsonable(getattr(response, "usage", None))
+            model = kwargs.get("model")
+            append_span(
+                {
+                    "type": "llm_call",
+                    "provider": "anthropic",
+                    "ts": _now_iso(),
+                    "latency_ms": _elapsed_ms(started),
+                    "input_messages": _to_jsonable(kwargs.get("messages", [])),
+                    "tools": _to_jsonable(kwargs.get("tools", [])),
+                    "model": model,
+                    "response_content": response_content,
+                    "stop_reason": getattr(response, "stop_reason", None),
+                    "usage": usage,
+                    "cost_usd": compute_cost_usd(model, usage if isinstance(usage, dict) else {}),
+                    "async": True,
+                }
+            )
+            capture_anthropic_tool_calls(response_content)
+            return response
+        except Exception as exc:
+            capture_error(exc, context=_anthropic_context(kwargs), latency_ms=_elapsed_ms(started))
+            raise
+
+    async def stream(self, **kwargs: Any) -> Any:  # type: ignore[override]
+        """Async streaming — yields chunks and captures a span when done."""
+        started = time.perf_counter()
+        capture_tool_results_from_messages(kwargs.get("messages", []), provider="anthropic")
+        accumulated_content: list[Any] = []
+        try:
+            async with self._messages.stream(**kwargs) as stream:
+                async for chunk in stream:
+                    accumulated_content.append(chunk)
+                    yield chunk
+                # Capture final message after stream closes
+                try:
+                    message = stream.get_final_message()
+                    response_content = _to_jsonable(getattr(message, "content", None))
+                    usage = _to_jsonable(getattr(message, "usage", None))
+                    model = kwargs.get("model")
+                    append_span(
+                        {
+                            "type": "llm_call",
+                            "provider": "anthropic",
+                            "ts": _now_iso(),
+                            "latency_ms": _elapsed_ms(started),
+                            "input_messages": _to_jsonable(kwargs.get("messages", [])),
+                            "tools": _to_jsonable(kwargs.get("tools", [])),
+                            "model": model,
+                            "response_content": response_content,
+                            "stop_reason": getattr(message, "stop_reason", None),
+                            "usage": usage,
+                            "cost_usd": compute_cost_usd(model, usage if isinstance(usage, dict) else {}),
+                            "streaming": True,
+                            "async": True,
+                        }
+                    )
+                    capture_anthropic_tool_calls(response_content)
+                except Exception:
+                    pass
+        except Exception as exc:
+            capture_error(exc, context=_anthropic_context(kwargs), latency_ms=_elapsed_ms(started))
+            raise
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._messages, name)
+
+
+class _AsyncOpenAIChatProxy:
+    def __init__(self, chat: Any) -> None:
+        self._chat = chat
+        self.completions = _AsyncOpenAICompletionsProxy(chat.completions)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._chat, name)
+
+
+class _AsyncOpenAICompletionsProxy:
+    """Async proxy for openai.AsyncOpenAI().chat.completions."""
+
+    def __init__(self, completions: Any) -> None:
+        self._completions = completions
+
+    async def create(self, **kwargs: Any) -> Any:
+        started = time.perf_counter()
+        try:
+            response = await self._completions.create(**kwargs)
+            response_json = _to_jsonable(response)
+            usage = response_json.get("usage") if isinstance(response_json, dict) else None
+            model = kwargs.get("model")
+            append_span(
+                {
+                    "type": "llm_call",
+                    "provider": "openai",
+                    "ts": _now_iso(),
+                    "latency_ms": _elapsed_ms(started),
+                    "input_messages": _to_jsonable(kwargs.get("messages", [])),
+                    "tools": _to_jsonable(kwargs.get("tools", kwargs.get("functions", []))),
+                    "model": model,
+                    "response_content": response_json,
+                    "stop_reason": _first_choice_stop_reason(response_json),
+                    "usage": usage,
+                    "cost_usd": compute_cost_usd(model, usage if isinstance(usage, dict) else {}),
+                    "async": True,
+                }
+            )
+            capture_openai_tool_calls(response_json)
+            return response
+        except Exception as exc:
+            capture_error(exc, context=_openai_context(kwargs), latency_ms=_elapsed_ms(started))
+            raise
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._completions, name)
+
+
+class _AsyncOpenAIResponsesProxy:
+    """Async proxy for openai.AsyncOpenAI().responses."""
+
+    def __init__(self, responses: Any) -> None:
+        self._responses = responses
+
+    async def create(self, **kwargs: Any) -> Any:
+        started = time.perf_counter()
+        try:
+            response = await self._responses.create(**kwargs)
+            response_json = _to_jsonable(response)
+            usage = response_json.get("usage") if isinstance(response_json, dict) else None
+            model = kwargs.get("model")
+            append_span(
+                {
+                    "type": "llm_call",
+                    "provider": "openai",
+                    "ts": _now_iso(),
+                    "latency_ms": _elapsed_ms(started),
+                    "input_messages": _to_jsonable(kwargs.get("input")),
+                    "tools": _to_jsonable(kwargs.get("tools", [])),
+                    "model": model,
+                    "response_content": response_json,
+                    "stop_reason": response_json.get("status") if isinstance(response_json, dict) else None,
+                    "usage": usage,
+                    "cost_usd": compute_cost_usd(model, usage if isinstance(usage, dict) else {}),
+                    "async": True,
                 }
             )
             capture_openai_tool_calls(response_json)
