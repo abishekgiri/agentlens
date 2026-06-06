@@ -380,11 +380,11 @@
 
   <div class="install-wrap">
     <span class="install-prompt">$</span>
-    <span class="install-cmd" id="install-text">pip install agentlens</span>
+    <span class="install-cmd" id="install-text">pip install -e ".[anthropic,openai]"</span>
     <button class="copy-btn" onclick="copyInstall()" title="Copy">⎘</button>
   </div>
   <br>
-  <span class="hero-note">Python 3.9+ · no cloud · no API key required</span>
+  <span class="hero-note">Python 3.9+ · no cloud · no API key required · <a href="https://github.com/abishekgiri/agentlens" style="color:var(--text3)">clone first →</a></span>
 
   <div class="frameworks">
     <span class="fw-tag">Anthropic</span>
@@ -642,7 +642,7 @@ app = graph.<span class="fn">compile</span>()               <span class="cm"># e
 
   <div class="install-wrap" style="margin: 0 auto 16px;">
     <span class="install-prompt">$</span>
-    <span class="install-cmd">pip install agentlens</span>
+    <span class="install-cmd">pip install -e ".[anthropic,openai]"</span>
     <button class="copy-btn" onclick="copyInstall()" title="Copy">⎘</button>
   </div>
   <br>
@@ -657,7 +657,7 @@ app = graph.<span class="fn">compile</span>()               <span class="cm"># e
 
 <script>
   function copyInstall() {
-    navigator.clipboard.writeText('pip install agentlens').then(() => {
+    navigator.clipboard.writeText('pip install -e ".[anthropic,openai]"').then(() => {
       const btn = document.querySelector('.copy-btn');
       btn.textContent = '✓';
       btn.style.color = 'var(--green)';

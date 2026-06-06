@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import functools
 import inspect
@@ -749,48 +750,77 @@ class _AsyncAnthropicMessagesProxy:
             capture_error(exc, context=_anthropic_context(kwargs), latency_ms=_elapsed_ms(started))
             raise
 
-    async def stream(self, **kwargs: Any) -> Any:  # type: ignore[override]
-        """Async streaming — yields chunks and captures a span when done."""
+    def stream(self, **kwargs: Any) -> "_AsyncAnthropicStreamContext":
+        """Return an async context manager for streaming — supports:
+            async with client.messages.stream(...) as s:   (standard Anthropic pattern)
+        """
         started = time.perf_counter()
         capture_tool_results_from_messages(kwargs.get("messages", []), provider="anthropic")
-        accumulated_content: list[Any] = []
         try:
-            async with self._messages.stream(**kwargs) as stream:
-                async for chunk in stream:
-                    accumulated_content.append(chunk)
-                    yield chunk
-                # Capture final message after stream closes
-                try:
-                    message = stream.get_final_message()
-                    response_content = _to_jsonable(getattr(message, "content", None))
-                    usage = _to_jsonable(getattr(message, "usage", None))
-                    model = kwargs.get("model")
-                    append_span(
-                        {
-                            "type": "llm_call",
-                            "provider": "anthropic",
-                            "ts": _now_iso(),
-                            "latency_ms": _elapsed_ms(started),
-                            "input_messages": _to_jsonable(kwargs.get("messages", [])),
-                            "tools": _to_jsonable(kwargs.get("tools", [])),
-                            "model": model,
-                            "response_content": response_content,
-                            "stop_reason": getattr(message, "stop_reason", None),
-                            "usage": usage,
-                            "cost_usd": compute_cost_usd(model, usage if isinstance(usage, dict) else {}),
-                            "streaming": True,
-                            "async": True,
-                        }
-                    )
-                    capture_anthropic_tool_calls(response_content)
-                except Exception:
-                    pass
+            ctx = self._messages.stream(**kwargs)
         except Exception as exc:
             capture_error(exc, context=_anthropic_context(kwargs), latency_ms=_elapsed_ms(started))
             raise
+        return _AsyncAnthropicStreamContext(ctx, kwargs, started)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._messages, name)
+
+
+class _AsyncAnthropicStreamContext:
+    """Async context manager wrapper that saves a span when async Anthropic streaming completes.
+
+    Supports:
+        async with client.messages.stream(...) as s:
+            async for chunk in s: ...
+    """
+
+    def __init__(self, ctx: Any, kwargs: dict[str, Any], started: float) -> None:
+        self._ctx = ctx
+        self._kwargs = kwargs
+        self._started = started
+        self._stream: Any = None
+
+    async def __aenter__(self) -> Any:
+        self._stream = await self._ctx.__aenter__()
+        return self._stream
+
+    async def __aexit__(self, *args: Any) -> Any:
+        result = await self._ctx.__aexit__(*args)
+        await self._save_span()
+        return result
+
+    async def _save_span(self) -> None:
+        if self._stream is None:
+            return
+        try:
+            get_final = getattr(self._stream, "get_final_message", None)
+            message = await get_final() if get_final and asyncio.iscoroutinefunction(get_final) else (get_final() if get_final else None)
+            if message is None:
+                return
+            response_content = _to_jsonable(getattr(message, "content", None))
+            usage = _to_jsonable(getattr(message, "usage", None))
+            model = self._kwargs.get("model")
+            append_span(
+                {
+                    "type": "llm_call",
+                    "provider": "anthropic",
+                    "ts": _now_iso(),
+                    "latency_ms": _elapsed_ms(self._started),
+                    "input_messages": _to_jsonable(self._kwargs.get("messages", [])),
+                    "tools": _to_jsonable(self._kwargs.get("tools", [])),
+                    "model": model,
+                    "response_content": response_content,
+                    "stop_reason": getattr(message, "stop_reason", None),
+                    "usage": usage,
+                    "cost_usd": compute_cost_usd(model, usage if isinstance(usage, dict) else {}),
+                    "streaming": True,
+                    "async": True,
+                }
+            )
+            capture_anthropic_tool_calls(response_content)
+        except Exception:
+            pass
 
 
 class _AsyncOpenAIChatProxy:
