@@ -15,6 +15,7 @@ from .classifier import (
     validate_diagnosis,
 )
 from .fixes import generate_fix, likely_fixes
+from .hallucination import detect_hallucinations
 from .preprocess import preprocess_run
 
 
@@ -31,6 +32,12 @@ def diagnose_run(run_json: dict[str, Any], use_llm: bool = True) -> dict[str, An
 
     diagnosis["diagnosis_source"] = diagnosis_source
     diagnosis["fix"] = generate_fix(diagnosis["root_cause_category"], compact, diagnosis)
+
+    # Hallucination detection — always runs offline, results appended to diagnosis
+    tool_defs = compact.get("tool_definitions") or []
+    hallucinations = detect_hallucinations(spans, tool_defs)
+    diagnosis["hallucinations"] = hallucinations
+
     if diagnosis["confidence"] < 0.6:
         causes = [diagnosis["root_cause_category"], *diagnosis.get("secondary_issues", [])]
         diagnosis["low_confidence_message"] = (

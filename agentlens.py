@@ -10,8 +10,11 @@ import re
 from pathlib import Path
 from typing import Any
 
+from agentlens_engine.clustering import cluster_failures, print_clusters
 from agentlens_engine.diagnose import diagnose_run
 from agentlens_engine.evaluate import evaluate_cases, print_evaluation
+from agentlens_engine.hallucination import hallucination_summary
+from agentlens_engine.similarity import find_similar_failures
 from agentlens_engine.timeline import generate_html
 from agentlens_sdk import (
     AgentLensClient,
@@ -68,6 +71,10 @@ def main() -> None:
 
     diagnose_parser = subparsers.add_parser("diagnose")
     diagnose_parser.add_argument("run_id")
+    similar_parser = subparsers.add_parser("similar")
+    similar_parser.add_argument("run_id")
+    similar_parser.add_argument("--top", type=int, default=5)
+    subparsers.add_parser("clusters")
     anonymize_parser = subparsers.add_parser("anonymize")
     anonymize_parser.add_argument("run_id")
     feedback_parser = subparsers.add_parser("feedback-template")
@@ -105,6 +112,14 @@ def main() -> None:
 
     if args.command == "diagnose":
         _print_diagnosis(args.run_id)
+        return
+
+    if args.command == "similar":
+        _print_similar(args.run_id, top_n=args.top)
+        return
+
+    if args.command == "clusters":
+        _print_clusters()
         return
 
     if args.command == "anonymize":
@@ -261,6 +276,14 @@ def _print_diagnosis(run_id: str) -> None:
     print()
     print(f"CONFIDENCE: {diagnosis['confidence']:.2f}")
 
+    hallucinations = diagnosis.get("hallucinations") or []
+    if hallucinations:
+        print()
+        print("HALLUCINATIONS DETECTED:")
+        for h in hallucinations:
+            sev = h.get("severity", "?").upper()
+            print(f"  [{sev}] {h.get('detail', '')}")
+
 
 def _anonymize_run(run_id: str) -> None:
     item = _load_run_or_report(run_id)
@@ -395,6 +418,57 @@ def _print_run_stats(item: dict[str, Any]) -> None:
     print()
     print("Models:")
     _print_count_map(summary["models"])
+
+
+def _print_similar(run_id: str, top_n: int = 5) -> None:
+    """Find historically similar failures and print them."""
+    item = _load_run_or_report(run_id)
+    if item is None:
+        return
+
+    try:
+        diagnosis = diagnose_run(item, use_llm=False)
+    except ValueError as exc:
+        print(f"Could not diagnose run: {exc}")
+        return
+
+    all_runs = load_runs()
+    similar = find_similar_failures(diagnosis, item, all_runs, top_n=top_n)
+
+    print(f"Similar Failures — {item.get('name', run_id)}")
+    print(f"Root cause: {diagnosis.get('root_cause_category')}  ·  failed tool: {diagnosis.get('failed_at_tool') or 'n/a'}")
+    print("=" * 60)
+    print()
+
+    if not similar:
+        print("No similar historical failures found.")
+        print("Run more agents to build up a failure library.")
+        return
+
+    for i, match in enumerate(similar, start=1):
+        pct = int(match["similarity"] * 100)
+        print(f"#{i}  {match['name'] or match['run_id'][:8]}  —  {pct}% similar")
+        print(f"     Match: {match['match_reason']}")
+        print(f"     Category: {match['category']}  ·  Tool: {match['failed_at_tool'] or 'n/a'}")
+        started = (match.get("started_at") or "")[:19].replace("T", " ")
+        if started:
+            print(f"     When: {started} UTC")
+        if match.get("fix"):
+            print(f"     Fix used: {match['fix'][:120]}{'…' if len(match['fix']) > 120 else ''}")
+        print()
+
+
+def _print_clusters() -> None:
+    """Show failure clusters across all runs."""
+    all_runs = load_runs()
+    error_runs = [r for r in all_runs if r.get("status") in ("error", "failure")]
+    clusters = cluster_failures(all_runs)
+    print_clusters(clusters, total_runs=len(all_runs))
+    if clusters:
+        top = clusters[0]
+        pct = int(top["percentage"] * 100)
+        print(f"Top fix opportunity: fix '{top['category']}' on '{top['failed_tool'] or 'any tool'}' "
+              f"to eliminate {pct}% of failures.")
 
 
 def _open_timeline(run_id: str) -> None:
