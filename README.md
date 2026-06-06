@@ -2,6 +2,8 @@
 
 **[agentlens.run](https://agentlens.run) · [GitHub](https://github.com/abishekgiri/agentlens)**
 
+
+
 **When your AI agent breaks, AgentLens tells you exactly which decision caused it — and what to change.**
 
 Not logs. Not traces. The answer.
@@ -23,8 +25,8 @@ Works with **Anthropic · OpenAI · LangGraph · CrewAI · AutoGen · PydanticAI
 ## Install
 
 ```bash
-git clone https://github.com/abishekgiri/agentlens-.git
-cd agentlens-
+git clone https://github.com/abishekgiri/agentlens.git
+cd agentlens
 pip install -e ".[anthropic,openai]"
 ```
 
