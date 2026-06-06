@@ -194,6 +194,10 @@ class _AgentLensCompiledGraph:
             capture_error(exc, context={"provider": "langgraph", "input": _safe_str(input)})
             raise
 
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Support direct graph invocation: app(input) as well as app.invoke(input)."""
+        return self.invoke(*args, **kwargs)
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self._compiled, name)
 

@@ -281,7 +281,10 @@ def _tool_repeat(spans: list[dict[str, Any]]) -> list[str]:
 
 
 def _has_ambiguous_tools(spans: list[dict[str, Any]]) -> bool:
-    descriptions: dict[str, int] = {}
+    """True if any two tools across the run have descriptions with Jaccard similarity >= 0.6.
+    Uses the same threshold as the classifier so similarity search matches diagnosis behaviour.
+    """
+    descriptions: list[str] = []
     for s in spans:
         if s.get("type") != "llm_call":
             continue
@@ -289,6 +292,18 @@ def _has_ambiguous_tools(spans: list[dict[str, Any]]) -> bool:
             if not isinstance(t, dict):
                 continue
             desc = (t.get("description") or (t.get("function") or {}).get("description") or "").strip().lower()
-            if desc:
-                descriptions[desc] = descriptions.get(desc, 0) + 1
-    return any(v > 1 for v in descriptions.values())
+            if desc and desc not in descriptions:
+                descriptions.append(desc)
+    for i in range(len(descriptions)):
+        for j in range(i + 1, len(descriptions)):
+            if _desc_similarity(descriptions[i], descriptions[j]) >= 0.6:
+                return True
+    return False
+
+
+def _desc_similarity(a: str, b: str) -> float:
+    words_a = set(a.split())
+    words_b = set(b.split())
+    if not words_a or not words_b:
+        return 0.0
+    return len(words_a & words_b) / len(words_a | words_b)
