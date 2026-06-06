@@ -1,5 +1,7 @@
 # AgentLens
 
+**[agentlens.run](https://agentlens.run) · [GitHub](https://github.com/abishekgiri/agentlens)**
+
 **When your AI agent breaks, AgentLens tells you exactly which decision caused it — and what to change.**
 
 Not logs. Not traces. The answer.
@@ -19,12 +21,6 @@ Works with **Anthropic · OpenAI · LangGraph · CrewAI · AutoGen · PydanticAI
 ---
 
 ## Install
-
-```bash
-pip install -e ".[anthropic,openai]"
-```
-
-Or from source:
 
 ```bash
 git clone https://github.com/abishekgiri/agentlens-.git
@@ -101,7 +97,7 @@ async def run_agent(query):
     response = await client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": query}],
-        tools=[...]
+        tools=[],
     )
     return response
 ```
@@ -138,15 +134,30 @@ Plus **hallucination detection** — invented tool parameters, missing required 
 ## CLI reference
 
 ```bash
+# Runs
 agentlens runs list                     # all recent runs with status + span count
 agentlens runs show <run_id>            # full span detail for one run
-agentlens diagnose <run_id>             # root cause analysis
+agentlens runs view <run_id>            # open visual timeline in browser
+agentlens runs prompt <run_id>          # print exact LLM prompts sent at each step
+agentlens runs prompt <run_id> --step 2 # prompt for a specific LLM call only
+agentlens runs replay <run_id>          # interactive step-by-step playback (ENTER to advance)
+agentlens runs stitch <run_id>          # show multi-agent trace tree rooted at this run
+
+# Diagnosis
+agentlens diagnose <run_id>             # root cause analysis + hallucination report
+agentlens similar <run_id>              # find historically similar failures
+agentlens similar <run_id> --top 10     # top-N matches
+agentlens clusters                      # failure clusters across all runs + top fix
+
+# Stats & cost
 agentlens stats                         # token usage, latency, cost across all runs
 agentlens stats <run_id>                # per-run breakdown
+
+# Utilities
 agentlens anonymize <run_id>            # redact secrets before sharing
 agentlens feedback-template <run_id>    # structured feedback form
 agentlens evaluate                      # accuracy check against fixtures + real cases
-agentlens doctor                        # system health check before beta testing
+agentlens doctor                        # system health check
 ```
 
 ---
