@@ -13,7 +13,7 @@ from typing import Any
 from agentlens_engine.diagnose import diagnose_run
 from agentlens_engine.evaluate import evaluate_cases, print_evaluation
 from agentlens_sdk import AgentLensClient, init, load_run, load_runs, record_tool_result, run, save_run
-from agentlens_sdk.collector import RUNS_DIR
+from agentlens_sdk.collector import RUNS_DIR, AmbiguousRunIdError
 
 __all__ = [
     "AgentLensClient",
@@ -112,9 +112,8 @@ def _print_runs_list() -> None:
 
 
 def _print_run_detail(run_id: str) -> None:
-    item = load_run(run_id)
+    item = _load_run_or_report(run_id)
     if item is None:
-        print(f"Run not found: {run_id}")
         return
 
     print("AgentLens Run Detail")
@@ -165,9 +164,8 @@ def _compact(value: Any) -> str:
 
 
 def _print_diagnosis(run_id: str) -> None:
-    item = load_run(run_id)
+    item = _load_run_or_report(run_id)
     if item is None:
-        print(f"Run not found: {run_id}")
         return
 
     try:
@@ -178,6 +176,9 @@ def _print_diagnosis(run_id: str) -> None:
     if diagnosis.get("confidence", 0) < 0.6:
         print("AgentLens Diagnosis")
         print("===================")
+        print()
+        print("SOURCE:")
+        print(f"  {_diagnosis_source_label(diagnosis)}")
         print()
         print("LOW CONFIDENCE")
         print()
@@ -195,6 +196,9 @@ def _print_diagnosis(run_id: str) -> None:
 
     print("AgentLens Diagnosis")
     print("===================")
+    print()
+    print("SOURCE:")
+    print(f"  {_diagnosis_source_label(diagnosis)}")
     print()
     print("ROOT CAUSE:")
     print(f"  {diagnosis['root_cause_category']}")
@@ -221,9 +225,8 @@ def _print_diagnosis(run_id: str) -> None:
 
 
 def _anonymize_run(run_id: str) -> None:
-    item = load_run(run_id)
+    item = _load_run_or_report(run_id)
     if item is None:
-        print(f"Run not found: {run_id}")
         return
 
     anonymized = _anonymize_value(item)
@@ -276,9 +279,8 @@ def _print_feedback_template(run_id: str) -> None:
 
 def _print_stats(run_id: str | None) -> None:
     if run_id:
-        item = load_run(run_id)
+        item = _load_run_or_report(run_id)
         if item is None:
-            print(f"Run not found: {run_id}")
             return
         _print_run_stats(item)
         return
@@ -355,6 +357,28 @@ def _print_run_stats(item: dict[str, Any]) -> None:
     print()
     print("Models:")
     _print_count_map(summary["models"])
+
+
+def _load_run_or_report(run_id: str) -> dict[str, Any] | None:
+    try:
+        item = load_run(run_id)
+    except AmbiguousRunIdError as exc:
+        print(f"Multiple runs match '{exc.prefix}'. Please use a longer run_id.")
+        for match in exc.matches[:10]:
+            print(f"- {match}")
+        if len(exc.matches) > 10:
+            print(f"...and {len(exc.matches) - 10} more")
+        return None
+
+    if item is None:
+        print(f"Run not found: {run_id}")
+    return item
+
+
+def _diagnosis_source_label(diagnosis: dict[str, Any]) -> str:
+    if diagnosis.get("diagnosis_source") == "llm":
+        return "LLM diagnosis"
+    return "Heuristic fallback"
 
 
 def _summarize_run(item: dict[str, Any]) -> dict[str, Any]:
