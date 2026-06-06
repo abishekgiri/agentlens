@@ -1,146 +1,226 @@
 # AgentLens
 
-AgentLens is a local CLI + Python SDK that captures AI agent runs and explains why they failed.
+**When your AI agent breaks, AgentLens tells you exactly which decision caused it — and what to change.**
 
-It is for debugging broken agents, not monitoring production.
+Not logs. Not traces. The answer.
 
-## 2-Minute Install
-
-```bash
-git clone https://github.com/abishekgiri/agentlens-.git
-cd agentlens-
-pip install -e .
+```
+ROOT CAUSE:   tool_selection
+FAILED AT:    Step 2 (search_web)
+WHY:          Both tools had identical descriptions — the agent treated them as
+              interchangeable and picked the wrong one.
+FIX:          Rewrite tool descriptions so search_web is clearly for external
+              lookup and query_db is clearly for local records.
+CONFIDENCE:   0.90
 ```
 
-Optional provider SDKs:
+Works with **Anthropic · OpenAI · LangGraph · CrewAI · AutoGen · PydanticAI · raw API**
+
+---
+
+## Install
 
 ```bash
 pip install -e ".[anthropic,openai]"
 ```
 
-## Quickstart
+Or from source:
 
-Add AgentLens before you create your provider client:
+```bash
+git clone https://github.com/abishekgiri/agentlens-.git
+cd agentlens-
+pip install -e ".[anthropic,openai]"
+```
+
+---
+
+## Quickstart — 2 lines
+
+Add AgentLens before your existing provider client. No other changes.
 
 ```python
 import agentlens
-agentlens.init(api_key="al_local")
+agentlens.init()                        # patches Anthropic + OpenAI automatically
 
 import anthropic
-client = anthropic.Anthropic()
+client = anthropic.Anthropic()          # captured from here on
 
-@agentlens.run(name="customer_support_agent")
+@agentlens.run(name="my_agent")         # groups everything into one run
 def run_agent(query):
-    return client.messages.create(
+    response = client.messages.create(
         model="claude-3-5-sonnet-latest",
-        max_tokens=256,
-        messages=[{"role": "user", "content": query}],
+        max_tokens=512,
+        messages=[{"role": "user", "content": query}]
     )
+    return response
 ```
 
-`@agentlens.run(...)` supports both sync and async functions.
+Async agents work exactly the same — `agentlens.init()` patches `AsyncAnthropic` and `AsyncOpenAI` too.
 
-Run your agent. AgentLens saves the trace locally:
-
-```text
-.agentlens/runs/<run_id>.json
-```
-
-## Diagnose
+Run your agent, then:
 
 ```bash
 agentlens runs list
 agentlens diagnose <run_id>
 ```
 
-Diagnosis output includes `SOURCE`, which tells you whether the result came from an LLM diagnosis or the local heuristic fallback.
+---
 
-## Stats
+## Framework examples
 
-Inspect local token and latency usage:
+**LangGraph**
 
-```bash
-agentlens stats
-agentlens stats <run_id>
+```python
+import agentlens
+agentlens.init()
+agentlens.patch_langgraph()             # call before graph.compile()
+
+from langgraph.graph import StateGraph
+
+graph = StateGraph(MyState)
+graph.add_node("planner", planner_fn)
+graph.add_node("executor", executor_fn)
+app = graph.compile()                   # automatically wrapped — all nodes traced
+
+@agentlens.run(name="langgraph_agent")
+async def run(input):
+    return await app.ainvoke({"messages": input})
 ```
 
-This is the local Phase 3 version of cost and performance intelligence. It reports captured tokens, latency, providers, models, tool calls, errors, and any `cost_usd` fields present in traces. AgentLens does not estimate provider bills unless cost data is captured in the trace.
+**OpenAI async**
 
-Before beta testing, run:
+```python
+import agentlens
+agentlens.init()
 
-```bash
-agentlens doctor
+from openai import AsyncOpenAI
+client = AsyncOpenAI()                  # captured automatically
+
+@agentlens.run(name="openai_agent")
+async def run_agent(query):
+    response = await client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": query}],
+        tools=[...]
+    )
+    return response
 ```
 
-If doctor passes, AgentLens is ready for a beta user test.
+**Multi-agent tracing**
 
-Before sharing a trace, anonymize it:
+```python
+# Parent agent
+ctx = agentlens.get_trace_context()
 
-```bash
-agentlens anonymize <run_id>
+# Child agent (different process / service)
+agentlens.init(parent_context=ctx)      # stitches child trace into parent
 ```
 
-Send feedback:
+---
+
+## What AgentLens catches
+
+Six failure categories, detected automatically:
+
+| Category | What it means |
+|---|---|
+| `tool_selection` | Agent picked the wrong tool — usually because descriptions were too similar |
+| `loop` | Agent repeated the same tool call with the same inputs without exit |
+| `cascade` | A tool returned bad/stale data and a downstream step used it and failed |
+| `context_pollution` | Contradictory instructions in the prompt diluted the agent's goal |
+| `state_drift` | Agent abandoned its original goal mid-run |
+| `overflow` | Critical context was pushed out of the context window before the key decision |
+
+Plus **hallucination detection** — invented tool parameters, missing required fields, LLM output that contradicts what the tool actually returned.
+
+---
+
+## CLI reference
 
 ```bash
-agentlens feedback-template <run_id>
+agentlens runs list                     # all recent runs with status + span count
+agentlens runs show <run_id>            # full span detail for one run
+agentlens diagnose <run_id>             # root cause analysis
+agentlens stats                         # token usage, latency, cost across all runs
+agentlens stats <run_id>                # per-run breakdown
+agentlens anonymize <run_id>            # redact secrets before sharing
+agentlens feedback-template <run_id>    # structured feedback form
+agentlens evaluate                      # accuracy check against fixtures + real cases
+agentlens doctor                        # system health check before beta testing
 ```
 
-Example output:
+---
 
-```text
+## Real example output
+
+```
+AgentLens Diagnosis
+===================
+
 ROOT CAUSE:
-tool_selection
+  cascade
 
 FAILED AT:
-Step 2 (search_web)
+  Step 3 (get_user_profile)
 
 WHY:
-Step 2 chose 'search_web' but the trace marks 'query_db' as the expected tool.
+  Step 3 produced bad or corrupted output that caused a failure at step 6.
+  get_user_profile returned {"email": null, "warning": "stale cache entry"}
+  and send_email downstream tried to use the null email field.
 
 FIX:
-Rewrite the tool descriptions so 'search_web' is clearly for external lookup and 'query_db' is clearly for this request, then route this case to 'query_db'.
+  Validate the output from 'get_user_profile' before using it downstream;
+  if it is stale, empty, or malformed, stop and recover instead of feeding
+  it into the next step.
 
-CONFIDENCE: 0.94
+SECONDARY:
+  None
+
+CONFIDENCE: 0.90
+
+HALLUCINATIONS DETECTED:
+  [HIGH] step 5 — invented param: 'send_email' was called with 'priority'
+  which is not in its schema. Valid params: ['to', 'body'].
 ```
 
-## Demo
+---
 
-See `demo/terminal_recording.md` for a short terminal recording script showing a broken run, captured trace, and diagnosis output.
+## How it works
 
-## Supported Providers
+`agentlens.init()` monkeypatches your provider clients at import time — no changes to existing code. Every LLM call, tool call, error, and memory snapshot is captured as a span and saved locally to `.agentlens/runs/<run_id>.json`.
 
-- Anthropic: `client.messages.create(...)`
-- OpenAI: `client.chat.completions.create(...)`
-- OpenAI: `client.responses.create(...)`
+`agentlens diagnose` runs the trace through a preprocessing pipeline, then either an LLM-powered classifier (if `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` is set) or a fast local heuristic fallback. The local fallback works offline with no API key required.
 
-## Local Evaluation
+All data stays on your machine. No cloud. No signup. No account.
 
-Run the built-in fixture evaluation:
+---
+
+## Add a real-world test case
+
+```
+real_world_cases/my-broken-agent/
+├── trace.json              # anonymized run from .agentlens/runs/
+├── expected_diagnosis.json # {"root_cause_category": "loop", "failed_at_step": 4}
+└── notes.md                # what the agent was doing and what actually broke
+```
+
+Run `agentlens evaluate` to score the diagnosis engine against your case.
+
+---
+
+## What this is not
+
+No dashboard. No hosted API. No database. No billing. No auth.
+
+This is a local developer tool. The goal: when your agent breaks, run one command and get the answer in under 30 seconds.
+
+---
+
+## Feedback
+
+If AgentLens finds (or misses) a real bug in your agent, we want to know.
 
 ```bash
-agentlens evaluate
+agentlens anonymize <run_id>            # redact secrets
+agentlens feedback-template <run_id>    # fill this in and send it
 ```
-
-This checks the current diagnosis engine against known failure cases and any saved cases in `real_world_cases/`.
-
-Real-world cases should live in folders like:
-
-```text
-real_world_cases/customer-support-tool-selection/
-├── trace.json
-├── expected_diagnosis.json
-├── actual_diagnosis.txt
-└── notes.md
-```
-
-## What This Is Not
-
-- no dashboard
-- no hosted API
-- no database
-- no analytics platform
-- no billing
-- no auth
-
-Phase 3 goal: get 10 real developers to try AgentLens on real broken agents and learn whether the diagnosis saves time.
