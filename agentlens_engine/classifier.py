@@ -109,12 +109,17 @@ def classify_from_evidence(compact_run: dict[str, Any]) -> dict[str, Any]:
 def _detect_tool_selection(compact_run: dict[str, Any]) -> dict[str, Any] | None:
     tools = compact_run.get("tool_definitions", [])
     ambiguous = _has_ambiguous_tools(tools)
+
     for step in compact_run.get("diagnostic_steps", []):
         if step.get("type") != "tool_call":
             continue
+
         tool = step.get("tool_name")
         expected = step.get("expected_tool")
-        output_text = _text(step.get("output")) + " " + _text(compact_run.get("error"))
+        output = step.get("output")
+        output_text = _text(output) + " " + _text(compact_run.get("error"))
+
+        # Explicit expected_tool mismatch — highest confidence
         if expected and expected != tool:
             return _diagnosis(
                 "tool_selection",
@@ -123,15 +128,56 @@ def _detect_tool_selection(compact_run: dict[str, Any]) -> dict[str, Any] | None
                 tool,
                 f"Step {step['step']} chose '{tool}' but the trace marks '{expected}' as the expected tool.",
             )
-        if ambiguous and _contains(output_text, ["wrong tool", "only available", "not available on the web"]):
+
+        # Ambiguous tools + error message explicitly says the right tool is elsewhere
+        if ambiguous and _contains(output_text, _WRONG_TOOL_SIGNALS):
             return _diagnosis(
                 "tool_selection",
-                0.9,
+                0.90,
                 step["step"],
                 tool,
-                f"Step {step['step']} chose '{tool}' after ambiguous tool descriptions, and the output says the data was only available elsewhere.",
+                f"Step {step['step']} chose '{tool}' after ambiguous tool descriptions, "
+                f"and the error confirms the data was only available in a different tool.",
             )
+
+        # Structural fallback: tools are similar AND this tool call errored — even
+        # without explicit "use other tool" language in the error message.
+        # Lower confidence since we have no keyword confirmation.
+        tool_errored = (
+            isinstance(output, dict) and (
+                output.get("status") == "error" or bool(output.get("error"))
+            )
+        )
+        if ambiguous and tool_errored:
+            return _diagnosis(
+                "tool_selection",
+                0.82,
+                step["step"],
+                tool,
+                f"Step {step['step']} chose '{tool}' which then errored. "
+                f"Multiple tools have similar descriptions — the agent likely selected "
+                f"the wrong one because the descriptions were not distinct enough.",
+            )
+
     return None
+
+
+# Phrases in tool output/error text that signal the wrong tool was called.
+# Broad enough to catch varied phrasings across frameworks.
+_WRONG_TOOL_SIGNALS = [
+    # classic
+    "wrong tool", "not the right tool", "incorrect tool",
+    # "only available in X" patterns
+    "only available", "only available in", "not available on the web",
+    "only in", "only found in", "records only in",
+    # "X only handles Y" patterns
+    "only handles", "handles only", "handles tickets only",
+    "only for", "is not for",
+    # "use X instead" patterns
+    "should use", "use instead", "try instead",
+    # "available in X" without "only"
+    "available in", "stored in",
+]
 
 
 def _detect_context_pollution(compact_run: dict[str, Any]) -> dict[str, Any] | None:
@@ -344,13 +390,34 @@ def _infer_likely_categories(compact_run: dict[str, Any]) -> list[str]:
 
 
 def _has_ambiguous_tools(tools: list[dict[str, Any]]) -> bool:
-    descriptions: dict[str, int] = {}
-    for tool in tools:
-        description = _tool_description(tool).strip().lower()
-        if not description:
-            continue
-        descriptions[description] = descriptions.get(description, 0) + 1
-    return any(count > 1 for count in descriptions.values())
+    """Return True if any two tools have descriptions that are identical or highly similar.
+
+    Uses Jaccard word-overlap similarity with a 0.6 threshold so that
+    "look up customer records" and "look up customer information" are
+    both caught — not just exact duplicates.
+    """
+    descriptions = [
+        _tool_description(t).strip().lower()
+        for t in tools
+        if _tool_description(t).strip()
+    ]
+    if len(descriptions) < 2:
+        return False
+
+    for i in range(len(descriptions)):
+        for j in range(i + 1, len(descriptions)):
+            if _description_similarity(descriptions[i], descriptions[j]) >= 0.6:
+                return True
+    return False
+
+
+def _description_similarity(a: str, b: str) -> float:
+    """Jaccard similarity between the word sets of two tool descriptions."""
+    words_a = set(a.split())
+    words_b = set(b.split())
+    if not words_a or not words_b:
+        return 0.0
+    return len(words_a & words_b) / len(words_a | words_b)
 
 
 def _tool_description(tool: dict[str, Any]) -> str:
