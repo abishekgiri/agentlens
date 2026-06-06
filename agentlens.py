@@ -404,7 +404,7 @@ def _summarize_run(item: dict[str, Any]) -> dict[str, Any]:
         "name": str(item.get("name") or ""),
         "status": str(item.get("status") or ""),
         "llm_calls": sum(1 for span in safe_spans if span.get("type") == "llm_call"),
-        "tool_calls": sum(1 for span in safe_spans if span.get("type") == "tool_call"),
+        "tool_calls": _count_tool_invocations(safe_spans),
         "errors": sum(1 for span in safe_spans if span.get("type") == "error"),
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
@@ -433,6 +433,26 @@ def _merge_stats(summaries: list[dict[str, Any]]) -> dict[str, Any]:
         for key in totals:
             totals[key] += summary[key]
     return totals
+
+
+def _count_tool_invocations(spans: list[dict[str, Any]]) -> int:
+    invocations: set[str] = set()
+    for index, span in enumerate(spans):
+        if span.get("type") != "tool_call":
+            continue
+        tool_use_id = span.get("tool_use_id")
+        if tool_use_id:
+            key = f"id:{tool_use_id}"
+        else:
+            key = json.dumps(
+                {"tool_name": span.get("tool_name"), "input": span.get("input")},
+                sort_keys=True,
+                default=str,
+            )
+            if key == '{"input": null, "tool_name": null}':
+                key = f"span:{index}"
+        invocations.add(key)
+    return len(invocations)
 
 
 def _extract_cost_usd(value: Any) -> float:
