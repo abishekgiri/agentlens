@@ -38,6 +38,8 @@ def run_agent(query):
     )
 ```
 
+`@agentlens.run(...)` supports both sync and async functions.
+
 Run your agent. AgentLens saves the trace locally:
 
 ```text
@@ -50,6 +52,8 @@ Run your agent. AgentLens saves the trace locally:
 agentlens runs list
 agentlens diagnose <run_id>
 ```
+
+Diagnosis output includes `SOURCE`, which tells you whether the result came from an LLM diagnosis or the local heuristic fallback.
 
 ## Stats
 

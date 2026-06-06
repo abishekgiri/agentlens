@@ -25,9 +25,11 @@ def diagnose_run(run_json: dict[str, Any], use_llm: bool = True) -> dict[str, An
 
     compact = preprocess_run(spans, run_json=run_json)
     diagnosis = _diagnose_with_llm(compact) if use_llm else None
+    diagnosis_source = "llm" if diagnosis is not None else "heuristic"
     if diagnosis is None:
         diagnosis = classify_from_evidence(compact)
 
+    diagnosis["diagnosis_source"] = diagnosis_source
     diagnosis["fix"] = generate_fix(diagnosis["root_cause_category"], compact, diagnosis)
     if diagnosis["confidence"] < 0.6:
         causes = [diagnosis["root_cause_category"], *diagnosis.get("secondary_issues", [])]

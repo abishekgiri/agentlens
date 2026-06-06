@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextvars
 import functools
+import inspect
 import json
 import time
 import uuid
@@ -17,6 +18,15 @@ _current_run: contextvars.ContextVar[dict[str, Any] | None] = contextvars.Contex
     "agentlens_current_run", default=None
 )
 _config: dict[str, Any] = {"api_key": None, "patched": set(), "originals": {}}
+
+
+class AmbiguousRunIdError(ValueError):
+    """Raised when a run_id prefix matches more than one local run."""
+
+    def __init__(self, prefix: str, matches: list[str]):
+        super().__init__(f"Multiple runs match '{prefix}'")
+        self.prefix = prefix
+        self.matches = matches
 
 
 class AgentLensClient:
@@ -76,8 +86,29 @@ def run(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Group all captured spans inside the decorated function into one saved run."""
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        if inspect.iscoroutinefunction(func):
+
+            @functools.wraps(func)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                run_data = start_run(name=name)
+                token = _current_run.set(run_data)
+                try:
+                    result = await func(*args, **kwargs)
+                    run_data["status"] = "success"
+                    return result
+                except Exception as exc:
+                    run_data["status"] = "error"
+                    run_data["error"] = str(exc)
+                    capture_error(exc, context={"function": func.__name__})
+                    raise
+                finally:
+                    _finalize_run(run_data)
+                    _current_run.reset(token)
+
+            return async_wrapper
+
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             run_data = start_run(name=name)
             token = _current_run.set(run_data)
             try:
@@ -90,13 +121,10 @@ def run(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
                 capture_error(exc, context={"function": func.__name__})
                 raise
             finally:
-                if run_data["status"] == "success" and _run_has_error_span(run_data):
-                    run_data["status"] = "error"
-                run_data["ended_at"] = _now_iso()
-                save_run(run=run_data)
+                _finalize_run(run_data)
                 _current_run.reset(token)
 
-        return wrapper
+        return sync_wrapper
 
     return decorator
 
@@ -168,6 +196,13 @@ def save_run(path: str | None = None, run: dict[str, Any] | None = None) -> Path
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(run_data, indent=2), encoding="utf-8")
     return output_path
+
+
+def _finalize_run(run_data: dict[str, Any]) -> None:
+    if run_data["status"] == "success" and _run_has_error_span(run_data):
+        run_data["status"] = "error"
+    run_data["ended_at"] = _now_iso()
+    save_run(run=run_data)
 
 
 def capture_error(error: Exception | str, context: Any, latency_ms: float | None = None) -> None:
@@ -436,7 +471,8 @@ def load_run(run_id: str) -> dict[str, Any] | None:
         if len(matches) == 1:
             return matches[0]
         if len(matches) > 1:
-            print(f"Multiple runs match '{run_id}' — please provide more characters.")
+            match_ids = [str(run.get("run_id", "")) for run in matches if run.get("run_id")]
+            raise AmbiguousRunIdError(run_id, match_ids)
         return None
     return json.loads(path.read_text(encoding="utf-8"))
 
