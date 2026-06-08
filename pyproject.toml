@@ -5,13 +5,32 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agentlens"
 version = "0.1.0"
-description = "Local trace capture for debugging failed AI agent runs."
+description = "When your AI agent breaks, AgentLens tells you exactly which decision caused it — and what to change."
 readme = "README.md"
 requires-python = ">=3.9"
+license = "MIT"
 authors = [
-  { name = "AgentLens" }
+  { name = "AgentLens", email = "hello@agentlens.run" }
+]
+keywords = ["ai", "agents", "observability", "debugging", "llm", "tracing", "anthropic", "openai", "langgraph"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Debuggers",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = []
+
+[project.urls]
+Homepage = "https://agentlens.run"
+Repository = "https://github.com/abishekgiri/agentlens"
+Documentation = "https://github.com/abishekgiri/agentlens#readme"
+"Bug Tracker" = "https://github.com/abishekgiri/agentlens/issues"
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.40.0"]
