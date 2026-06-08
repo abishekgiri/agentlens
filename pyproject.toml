@@ -3,7 +3,7 @@ requires = ["setuptools>=68,<77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentlens-ai"
+name = "runlens"
 version = "0.1.0"
 description = "When your AI agent breaks, AgentLens tells you exactly which decision caused it — and what to change."
 readme = "README.md"
