@@ -25,6 +25,12 @@ Works with **Anthropic · OpenAI · LangGraph · CrewAI · AutoGen · PydanticAI
 ## Install
 
 ```bash
+pip install agentlens-ai
+```
+
+Or from source:
+
+```bash
 git clone https://github.com/abishekgiri/agentlens.git
 cd agentlens
 pip install -e ".[anthropic,openai]"
