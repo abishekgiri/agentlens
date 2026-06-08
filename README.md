@@ -25,7 +25,7 @@ Works with **Anthropic · OpenAI · LangGraph · CrewAI · AutoGen · PydanticAI
 ## Install
 
 ```bash
-pip install agentlens-ai
+pip install runlens
 ```
 
 Or from source:
