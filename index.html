@@ -380,7 +380,7 @@
 
   <div class="install-wrap">
     <span class="install-prompt">$</span>
-    <span class="install-cmd" id="install-text">pip install -e ".[anthropic,openai]"</span>
+    <span class="install-cmd" id="install-text">pip install agentlens-ai</span>
     <button class="copy-btn" onclick="copyInstall()" title="Copy">⎘</button>
   </div>
   <br>
@@ -642,7 +642,7 @@ app = graph.<span class="fn">compile</span>()               <span class="cm"># e
 
   <div class="install-wrap" style="margin: 0 auto 16px;">
     <span class="install-prompt">$</span>
-    <span class="install-cmd">pip install -e ".[anthropic,openai]"</span>
+    <span class="install-cmd">pip install agentlens-ai</span>
     <button class="copy-btn" onclick="copyInstall()" title="Copy">⎘</button>
   </div>
   <br>
@@ -657,7 +657,7 @@ app = graph.<span class="fn">compile</span>()               <span class="cm"># e
 
 <script>
   function copyInstall() {
-    navigator.clipboard.writeText('pip install -e ".[anthropic,openai]"').then(() => {
+    navigator.clipboard.writeText('pip install agentlens-ai').then(() => {
       const btn = document.querySelector('.copy-btn');
       btn.textContent = '✓';
       btn.style.color = 'var(--green)';
