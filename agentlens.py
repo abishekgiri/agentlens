@@ -481,7 +481,7 @@ def _open_timeline(run_id: str) -> None:
     item = _load_run_or_report(run_id)
     if item is None:
         return
-    html = generate_html(item)
+    html = generate_html(item, diagnosis=_load_diagnosis_for(item))
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".html", delete=False, encoding="utf-8"
     ) as tmp:
@@ -489,6 +489,23 @@ def _open_timeline(run_id: str) -> None:
         tmp_path = tmp.name
     webbrowser.open(f"file://{tmp_path}")
     print(f"Timeline opened in browser: {tmp_path}")
+
+
+def _load_diagnosis_for(item: dict[str, Any]) -> dict[str, Any] | None:
+    """Find a diagnosis for this run: saved file first, else offline diagnosis for failed runs."""
+    run_id = str(item.get("run_id") or "")
+    diag_path = Path(".agentlens") / "diagnoses" / f"{run_id}.json"
+    if diag_path.exists():
+        try:
+            return json.loads(diag_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    if item.get("status") in ("error", "failure"):
+        try:
+            return diagnose_run(item, use_llm=False)
+        except Exception:
+            return None
+    return None
 
 
 def _print_prompt_viewer(run_id: str, step: int | None = None) -> None:
