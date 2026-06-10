@@ -1,6 +1,6 @@
 # AgentLens
 
-**[agentlens.run](https://agentlens.run) · [GitHub](https://github.com/abishekgiri/agentlens)**
+**[agentlens.run](https://agentlens.run) · [GitHub](https://github.com/agentlens-hq/agentlens)**
 
 
 
@@ -31,7 +31,7 @@ pip install runlens
 Or from source:
 
 ```bash
-git clone https://github.com/abishekgiri/agentlens.git
+git clone https://github.com/agentlens-hq/agentlens.git
 cd agentlens
 pip install -e ".[anthropic,openai]"
 ```
