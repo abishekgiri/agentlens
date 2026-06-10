@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentLens — Live Demo</title>
+  <meta name="description" content="See AgentLens diagnose a real broken AI agent — no install required." />
+  <link rel="canonical" href="https://agentlens.run/demo" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:        #0d0d0d;
+      --bg2:       #111111;
+      --bg3:       #161616;
+      --border:    #222222;
+      --border2:   #2a2a2a;
+      --green:     #22c55e;
+      --green-dim: #16a34a;
+      --amber:     #f59e0b;
+      --red:       #ef4444;
+      --blue:      #3b82f6;
+      --purple:    #a855f7;
+      --text:      #e5e5e5;
+      --text2:     #a3a3a3;
+      --text3:     #525252;
+      --mono:      'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      --sans:      -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    }
+    html { scroll-behavior: smooth; }
+    body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+    a { color: var(--green); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* NAV */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,13,13,0.92); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px; height: 52px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-logo { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--green); letter-spacing: -0.02em; }
+    .nav-logo span { color: var(--text2); }
+    .nav-links { display: flex; gap: 24px; align-items: center; }
+    .nav-links a { color: var(--text2); font-size: 13px; }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+    .nav-back { display: flex; align-items: center; gap: 6px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px; padding: 5px 12px; font-size: 12px; color: var(--text) !important; font-family: var(--mono); }
+    .nav-back:hover { border-color: var(--green); text-decoration: none !important; }
+
+    /* INTRO */
+    .intro { max-width: 760px; margin: 0 auto; padding: 64px 24px 40px; text-align: center; }
+    .demo-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.2); border-radius: 20px; padding: 4px 12px; font-size: 12px; font-family: var(--mono); color: var(--green); margin-bottom: 24px; }
+    .intro h1 { font-size: clamp(1.8rem, 4vw, 2.8rem); font-weight: 700; line-height: 1.15; letter-spacing: -0.03em; margin-bottom: 16px; }
+    .intro h1 em { color: var(--green); font-style: normal; }
+    .intro p { color: var(--text2); font-size: 16px; max-width: 520px; margin: 0 auto; }
+
+    /* SCENARIO */
+    .scenario { max-width: 900px; margin: 0 auto; padding: 0 24px 48px; }
+    .scenario-title { font-family: var(--mono); font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+    .scenario-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 20px 24px; display: flex; align-items: flex-start; gap: 16px; }
+    .scenario-icon { font-size: 20px; margin-top: 2px; flex-shrink: 0; }
+    .scenario-text strong { color: var(--text); display: block; margin-bottom: 4px; font-size: 14px; }
+    .scenario-text p { color: var(--text2); font-size: 13px; line-height: 1.5; }
+    .scenario-code { font-family: var(--mono); color: var(--amber); }
+
+    /* VIEWER SHELL */
+    .viewer { max-width: 1100px; margin: 0 auto; padding: 0 24px 64px; }
+    .viewer-label { font-family: var(--mono); font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+
+    .tl-shell { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-family: var(--mono); }
+
+    /* TOP BAR */
+    .tl-topbar {
+      background: #0a0a0a; border-bottom: 1px solid var(--border);
+      padding: 10px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 12px;
+    }
+    .tl-runname { font-weight: 600; color: var(--text); font-size: 13px; }
+    .tl-meta { color: var(--text3); }
+    .tl-badge-fail { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); color: var(--red); border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .tl-stats { display: flex; gap: 12px; color: var(--text2); font-size: 12px; }
+    .tl-stats span { color: var(--text); }
+    .tl-stats .err { color: var(--red); }
+    .tl-diag-line { width: 100%; color: var(--amber); font-size: 12px; padding-top: 4px; border-top: 1px solid #1a1a1a; }
+
+    /* LATENCY STRIP */
+    .tl-strip { height: 6px; display: flex; cursor: pointer; }
+    .tl-seg { height: 100%; transition: opacity 0.15s; }
+    .tl-seg:hover { opacity: 0.7; }
+
+    /* BODY */
+    .tl-body { display: flex; height: 520px; }
+
+    /* LEFT PANEL */
+    .tl-left { width: 280px; flex-shrink: 0; border-right: 1px solid var(--border); overflow-y: auto; }
+    .tl-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 12px; cursor: pointer; border-bottom: 1px solid rgba(34,34,34,0.6);
+      border-left: 3px solid transparent; transition: background 0.1s;
+      font-size: 12px; position: relative;
+    }
+    .tl-row:hover { background: rgba(255,255,255,0.03); }
+    .tl-row.active { background: rgba(255,255,255,0.05); }
+    .tl-row.root-cause { background: rgba(239,68,68,0.08); border-left-color: var(--red) !important; }
+    .tl-row.root-cause.active { background: rgba(239,68,68,0.14); }
+    .tl-step { color: var(--text3); font-size: 11px; width: 16px; flex-shrink: 0; }
+    .tl-icon { font-size: 10px; flex-shrink: 0; }
+    .tl-name { color: var(--text); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tl-ms { color: var(--text3); font-size: 11px; flex-shrink: 0; }
+    .tl-tok { color: var(--text3); font-size: 10px; }
+    .tl-rc-badge { font-size: 9px; color: var(--red); border: 1px solid rgba(239,68,68,0.4); border-radius: 3px; padding: 1px 4px; flex-shrink: 0; }
+    .tl-bar-wrap { width: 40px; flex-shrink: 0; }
+    .tl-bar { height: 3px; background: var(--text3); border-radius: 2px; }
+
+    /* RIGHT PANEL */
+    .tl-right { flex: 1; overflow-y: auto; padding: 0; }
+
+    .diag-banner {
+      border: 1px solid rgba(245,158,11,0.35); background: rgba(245,158,11,0.05);
+      border-radius: 6px; margin: 16px; padding: 16px 18px; font-size: 13px;
+    }
+    .diag-banner .db-row { margin-bottom: 6px; display: flex; gap: 8px; }
+    .diag-banner .db-row:last-child { margin-bottom: 0; }
+    .db-label { color: var(--amber); font-weight: 600; min-width: 80px; flex-shrink: 0; }
+    .db-val { color: var(--text); }
+    .db-conf { display: inline-flex; align-items: center; gap: 8px; margin-top: 4px; }
+    .conf-bar-wrap { width: 80px; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .conf-bar { height: 100%; background: var(--green); border-radius: 2px; }
+
+    .span-detail { padding: 0 16px 16px; }
+    .span-header { display: flex; align-items: center; gap: 10px; padding: 14px 0 12px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+    .span-type-badge { font-size: 11px; font-weight: 600; border-radius: 4px; padding: 3px 8px; font-family: var(--mono); }
+    .badge-llm { background: rgba(59,130,246,0.15); color: var(--blue); }
+    .badge-tool { background: rgba(34,197,94,0.12); color: var(--green); }
+    .badge-error { background: rgba(239,68,68,0.12); color: var(--red); }
+    .span-title { font-size: 15px; font-weight: 600; color: var(--text); }
+    .span-meta { color: var(--text3); font-size: 12px; }
+
+    .detail-section { margin-bottom: 16px; }
+    .detail-section-title { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+    .detail-table { width: 100%; font-size: 12px; border-collapse: collapse; }
+    .detail-table td { padding: 5px 0; vertical-align: top; }
+    .detail-table td:first-child { color: var(--text3); width: 130px; padding-right: 12px; }
+    .detail-table td:last-child { color: var(--text); }
+
+    .code-block-sm { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; font-size: 12px; line-height: 1.6; overflow-x: auto; white-space: pre-wrap; color: var(--text2); }
+    .code-block-sm .kw { color: #c084fc; }
+    .code-block-sm .str { color: #86efac; }
+    .code-block-sm .key { color: var(--blue); }
+    .code-block-sm .val { color: var(--amber); }
+    .code-block-sm .null { color: var(--red); opacity: 0.7; }
+
+    .collapsible-header {
+      display: flex; align-items: center; justify-content: space-between;
+      cursor: pointer; padding: 8px 0; user-select: none;
+    }
+    .collapsible-header:hover .detail-section-title { color: var(--text2); }
+    .collapsible-arrow { color: var(--text3); font-size: 11px; transition: transform 0.2s; }
+    .collapsible-arrow.open { transform: rotate(90deg); }
+    .collapsible-body { display: none; }
+    .collapsible-body.open { display: block; }
+
+    .tool-table { width: 100%; font-size: 12px; border-collapse: collapse; }
+    .tool-table th { text-align: left; color: var(--text3); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; padding: 5px 8px; border-bottom: 1px solid var(--border); font-weight: 500; }
+    .tool-table td { padding: 7px 8px; border-bottom: 1px solid rgba(34,34,34,0.5); vertical-align: top; font-size: 12px; }
+    .tool-table td:first-child { color: var(--green); font-weight: 500; }
+    .tool-table td:last-child { color: var(--text2); }
+    .tool-same { color: var(--amber); font-style: italic; font-size: 11px; }
+
+    .halluc-card { background: rgba(239,68,68,0.07); border: 1px solid rgba(239,68,68,0.2); border-radius: 5px; padding: 10px 12px; font-size: 12px; color: var(--text2); margin-bottom: 8px; }
+    .halluc-card .h-severity { color: var(--red); font-weight: 700; margin-right: 6px; }
+    .halluc-card .h-title { color: var(--text); font-weight: 600; display: block; margin-bottom: 4px; }
+
+    .error-block { background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.2); border-radius: 6px; padding: 12px 14px; font-size: 12px; color: var(--red); white-space: pre-wrap; line-height: 1.6; }
+
+    /* EMPTY STATE */
+    .empty-state { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text3); font-size: 13px; }
+
+    /* CTA */
+    .cta-section { max-width: 760px; margin: 0 auto; padding: 0 24px 96px; text-align: center; }
+    .cta-divider { border: none; border-top: 1px solid var(--border); margin-bottom: 56px; }
+    .cta-section h2 { font-size: clamp(1.6rem, 3.5vw, 2.4rem); font-weight: 700; letter-spacing: -0.03em; margin-bottom: 12px; }
+    .cta-section p { color: var(--text2); margin-bottom: 32px; }
+    .install-wrap { display: inline-flex; align-items: center; gap: 12px; background: var(--bg2); border: 1px solid var(--border2); border-radius: 8px; padding: 12px 20px; font-family: var(--mono); font-size: 14px; margin-bottom: 16px; }
+    .install-prompt { color: var(--green); }
+    .install-cmd { color: var(--text); }
+    .copy-btn { background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; color: var(--text2); cursor: pointer; padding: 3px 8px; font-size: 13px; }
+    .copy-btn:hover { border-color: var(--green); color: var(--green); }
+
+    .steps-mini { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 32px; }
+    .step-mini { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; font-size: 12px; font-family: var(--mono); color: var(--text2); text-align: left; min-width: 200px; }
+    .step-mini strong { color: var(--green); display: block; margin-bottom: 4px; font-size: 11px; }
+
+    footer { border-top: 1px solid var(--border); padding: 24px; text-align: center; color: var(--text3); font-size: 12px; }
+    footer a { color: var(--text3); }
+
+    @media (max-width: 700px) {
+      .tl-body { flex-direction: column; height: auto; }
+      .tl-left { width: 100%; border-right: none; border-bottom: 1px solid var(--border); height: 200px; }
+      .tl-right { height: auto; }
+      .nav-links { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a href="/" class="nav-logo" style="text-decoration:none">agent<span>lens</span></a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a>
+    <a href="/#install">Install</a>
+    <a href="https://github.com/agentlens-hq/agentlens" target="_blank" class="nav-back">★ GitHub</a>
+  </div>
+</nav>
+
+<!-- INTRO -->
+<div class="intro">
+  <div class="demo-badge">● live demo — no install required</div>
+  <h1>A real broken agent.<br><em>AgentLens finds the problem.</em></h1>
+  <p>This is actual AgentLens output — the same UI you'd see in your terminal after running <code style="font-family:var(--mono);color:var(--green)">agentlens runs view</code>.</p>
+</div>
+
+<!-- SCENARIO -->
+<div class="scenario">
+  <div class="scenario-title">// the scenario</div>
+  <div class="scenario-card">
+    <div class="scenario-icon">🤖</div>
+    <div class="scenario-text">
+      <strong>Customer support agent — broken</strong>
+      <p>An OpenAI agent with two tools: <span class="scenario-code">search_web</span> for external queries and <span class="scenario-code">query_db</span> for local customer records. A user asked it to find their renewal status. The agent called the wrong tool, hit a network error, retried once, and crashed. It never actually looked up the customer's record.</p>
+    </div>
+  </div>
+</div>
+
+<!-- TIMELINE VIEWER -->
+<div class="viewer">
+  <div class="viewer-label">// agentlens runs view — embedded output</div>
+
+  <div class="tl-shell">
+
+    <!-- TOP BAR -->
+    <div class="tl-topbar">
+      <span class="tl-runname">openai_customer_support_agent</span>
+      <span class="tl-meta">070901b0 · 2026-06-06 21:23:44 UTC</span>
+      <span class="tl-badge-fail">FAILED</span>
+      <div class="tl-stats">
+        <span>4 spans</span>
+        <span><span>1</span> llm</span>
+        <span><span>2</span> tool</span>
+        <span class="err"><span>1</span> err</span>
+        <span><span>182</span> tok</span>
+        <span><span>$0.000118</span></span>
+        <span><span>0.02ms</span></span>
+      </div>
+      <div class="tl-diag-line">
+        ⚠ ROOT CAUSE: tool_selection · FAILED AT: Step 2 (search_web) · CONFIDENCE: 0.90
+      </div>
+    </div>
+
+    <!-- LATENCY STRIP -->
+    <div class="tl-strip" id="latency-strip">
+      <div class="tl-seg" style="width:35%;background:var(--blue);opacity:0.7" data-idx="0" title="gpt-4.1-mini · 0.02ms"></div>
+      <div class="tl-seg" style="width:30%;background:var(--red);opacity:0.7" data-idx="1" title="search_web · ROOT CAUSE"></div>
+      <div class="tl-seg" style="width:25%;background:var(--green);opacity:0.5" data-idx="2" title="search_web retry"></div>
+      <div class="tl-seg" style="width:10%;background:var(--red);opacity:0.9" data-idx="3" title="NetworkError"></div>
+    </div>
+
+    <!-- BODY -->
+    <div class="tl-body">
+
+      <!-- LEFT PANEL -->
+      <div class="tl-left" id="span-list">
+        <div class="tl-row active" data-idx="0" style="border-left-color:var(--blue)">
+          <span class="tl-step">1</span>
+          <span class="tl-icon" style="color:var(--blue)">●</span>
+          <span class="tl-name">gpt-4.1-mini</span>
+          <div class="tl-bar-wrap"><div class="tl-bar" style="width:35%;background:var(--blue)"></div></div>
+          <span class="tl-ms">0.02ms</span>
+          <span class="tl-tok">182t</span>
+        </div>
+        <div class="tl-row root-cause" data-idx="1" style="border-left-color:var(--red)">
+          <span class="tl-step">2</span>
+          <span class="tl-icon" style="color:var(--green)">▶</span>
+          <span class="tl-name">search_web</span>
+          <div class="tl-bar-wrap"><div class="tl-bar" style="width:30%;background:var(--red)"></div></div>
+          <span class="tl-ms">—</span>
+          <span class="tl-rc-badge">⚠ ROOT CAUSE</span>
+        </div>
+        <div class="tl-row" data-idx="2" style="border-left-color:var(--green)">
+          <span class="tl-step">3</span>
+          <span class="tl-icon" style="color:var(--green)">▶</span>
+          <span class="tl-name">search_web</span>
+          <div class="tl-bar-wrap"><div class="tl-bar" style="width:25%;background:var(--green)"></div></div>
+          <span class="tl-ms">—</span>
+        </div>
+        <div class="tl-row" data-idx="3" style="border-left-color:var(--red)">
+          <span class="tl-step">4</span>
+          <span class="tl-icon" style="color:var(--red)">✕</span>
+          <span class="tl-name" style="color:var(--red)">NetworkError</span>
+          <div class="tl-bar-wrap"><div class="tl-bar" style="width:10%;background:var(--red)"></div></div>
+          <span class="tl-ms">—</span>
+        </div>
+      </div>
+
+      <!-- RIGHT PANEL -->
+      <div class="tl-right" id="span-detail">
+        <!-- filled by JS -->
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- CTA -->
+<div class="cta-section">
+  <hr class="cta-divider" />
+  <h2>Try it with your own broken agent.</h2>
+  <p>Two lines to instrument. One command to diagnose.</p>
+
+  <div class="steps-mini">
+    <div class="step-mini">
+      <strong>01 — install</strong>
+      pip install runlens
+    </div>
+    <div class="step-mini">
+      <strong>02 — instrument</strong>
+      import agentlens<br>agentlens.init()
+    </div>
+    <div class="step-mini">
+      <strong>03 — diagnose</strong>
+      agentlens diagnose &lt;run_id&gt;
+    </div>
+  </div>
+
+  <div class="install-wrap">
+    <span class="install-prompt">$</span>
+    <span class="install-cmd">pip install runlens</span>
+    <button class="copy-btn" onclick="navigator.clipboard.writeText('pip install runlens')" title="Copy">⎘</button>
+  </div>
+  <br><br>
+  <a href="https://github.com/agentlens-hq/agentlens" target="_blank" style="color:var(--text2);font-size:13px;font-family:var(--mono)">★ Star on GitHub →</a>
+</div>
+
+<footer>
+  <p>agentlens.run · Open source · <a href="https://github.com/agentlens-hq/agentlens" target="_blank">GitHub</a> · MIT License</p>
+</footer>
+
+<script>
+  const SPANS = [
+    {
+      type: 'llm', badge: 'LLM', badgeClass: 'badge-llm',
+      title: 'gpt-4.1-mini', meta: 'step 1 · 21:23:44.731 · 0.02ms',
+      overview: [
+        ['model', 'gpt-4.1-mini'],
+        ['provider', 'openai'],
+        ['input tokens', '144'],
+        ['output tokens', '38'],
+        ['total tokens', '182'],
+        ['cost', '$0.000118'],
+        ['stop reason', 'tool_calls'],
+      ],
+      prompt: `[
+  {
+    "role": "user",
+    "content": "Find the renewal status for customer:alex using local records."
+  }
+]`,
+      response: 'The agent decided to call search_web with query "customer alex renewal status".',
+      tools: [
+        ['search_web', 'Search the web for information.'],
+        ['query_db', 'Search the web for information.'],
+      ],
+      toolsNote: true,
+    },
+    {
+      type: 'tool', badge: 'TOOL', badgeClass: 'badge-tool',
+      title: 'search_web', meta: 'step 2 · 21:23:44.752 · ROOT CAUSE',
+      isRootCause: true,
+      overview: [
+        ['tool', 'search_web'],
+        ['step', '2'],
+      ],
+      input: `{
+  "query": "customer alex renewal status"
+}`,
+      output: `{
+  "error": "Network access disabled. Customer data is not publicly searchable.",
+  "results": []
+}`,
+      outputIsError: true,
+      hallucinations: [
+        { severity: '[HIGH]', title: 'wrong tool', text: 'The correct tool for local customer records is query_db. search_web is for external web queries only. Both tools had identical descriptions, so the agent could not distinguish them.' }
+      ]
+    },
+    {
+      type: 'tool', badge: 'TOOL', badgeClass: 'badge-tool',
+      title: 'search_web', meta: 'step 3 · 21:23:44.801 · retry',
+      overview: [
+        ['tool', 'search_web'],
+        ['step', '3 (retry)'],
+      ],
+      input: `{
+  "query": "alex customer renewal database lookup"
+}`,
+      output: `{
+  "error": "Network access disabled.",
+  "results": []
+}`,
+      outputIsError: true,
+    },
+    {
+      type: 'error', badge: 'ERROR', badgeClass: 'badge-error',
+      title: 'NetworkError', meta: 'step 4 · 21:23:44.850',
+      errorText: `NetworkError: External network access is disabled in this environment.
+  at search_web (tools.py:42)
+  at execute_tool (agent.py:118)
+  at run_agent (agent.py:89)
+
+Agent stopped after 2 failed retries.
+Original task: find renewal status for customer:alex
+Result: FAILED — task not completed.`,
+    },
+  ];
+
+  const DIAGNOSIS = {
+    rootCause: 'tool_selection',
+    failedAt: 'Step 2 (search_web)',
+    why: 'Both tools had identical descriptions — the agent treated them as interchangeable and called search_web for a local record lookup that only query_db can answer.',
+    fix: 'Rewrite tool descriptions so search_web is clearly for external web queries and query_db is clearly for internal customer records. Make them mutually exclusive.',
+    confidence: 0.90,
+  };
+
+  function renderDiagBanner() {
+    return `<div class="diag-banner">
+      <div class="db-row"><span class="db-label">⚠ ROOT CAUSE</span><span class="db-val">${DIAGNOSIS.rootCause}</span></div>
+      <div class="db-row"><span class="db-label">FAILED AT</span><span class="db-val">${DIAGNOSIS.failedAt}</span></div>
+      <div class="db-row"><span class="db-label">WHY</span><span class="db-val">${DIAGNOSIS.why}</span></div>
+      <div class="db-row"><span class="db-label">FIX</span><span class="db-val">${DIAGNOSIS.fix}</span></div>
+      <div class="db-row"><span class="db-label">CONFIDENCE</span>
+        <span class="db-val">
+          <span class="db-conf">
+            ${DIAGNOSIS.confidence}
+            <div class="conf-bar-wrap"><div class="conf-bar" style="width:${DIAGNOSIS.confidence*100}%"></div></div>
+          </span>
+        </span>
+      </div>
+    </div>`;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function syntaxJson(raw) {
+    return escapeHtml(raw)
+      .replace(/"([^"]+)":/g, '<span class="key">"$1"</span>:')
+      .replace(/: "([^"]+)"/g, ': <span class="str">"$1"</span>')
+      .replace(/: (null)/g, ': <span class="null">$1</span>')
+      .replace(/: (true|false)/g, ': <span class="val">$1</span>')
+      .replace(/: (-?\d+\.?\d*)/g, ': <span class="val">$1</span>');
+  }
+
+  function collapsible(id, title, content) {
+    return `<div class="detail-section">
+      <div class="collapsible-header" onclick="toggleCollapse('${id}')">
+        <div class="detail-section-title">${title}</div>
+        <span class="collapsible-arrow" id="arr-${id}">▶</span>
+      </div>
+      <div class="collapsible-body" id="body-${id}">${content}</div>
+    </div>`;
+  }
+
+  function toggleCollapse(id) {
+    const body = document.getElementById('body-' + id);
+    const arr = document.getElementById('arr-' + id);
+    body.classList.toggle('open');
+    arr.classList.toggle('open');
+  }
+
+  function renderSpan(idx) {
+    const s = SPANS[idx];
+    let html = '';
+
+    if (idx === 0) html += renderDiagBanner();
+
+    html += `<div class="span-detail">
+      <div class="span-header">
+        <span class="span-type-badge ${s.badgeClass}">${s.badge}</span>
+        <span class="span-title">${escapeHtml(s.title)}</span>
+        <span class="span-meta">${s.meta}</span>
+      </div>`;
+
+    if (s.type === 'llm') {
+      html += `<div class="detail-section">
+        <div class="detail-section-title">OVERVIEW</div>
+        <table class="detail-table">`;
+      for (const [k,v] of s.overview) {
+        html += `<tr><td>${k}</td><td>${escapeHtml(v)}</td></tr>`;
+      }
+      html += `</table></div>`;
+
+      html += collapsible('prompt-'+idx, 'PROMPT', `<div class="code-block-sm">${syntaxJson(s.prompt)}</div>`);
+
+      html += `<div class="detail-section">
+        <div class="detail-section-title">RESPONSE</div>
+        <div class="code-block-sm">${escapeHtml(s.response)}</div>
+      </div>`;
+
+      if (s.tools) {
+        let toolHtml = `<table class="tool-table">
+          <thead><tr><th>name</th><th>description</th></tr></thead><tbody>`;
+        for (const [name, desc] of s.tools) {
+          toolHtml += `<tr><td>${escapeHtml(name)}</td><td>${escapeHtml(desc)}</td></tr>`;
+        }
+        toolHtml += `</tbody></table>`;
+        if (s.toolsNote) {
+          toolHtml += `<div style="margin-top:10px;padding:8px 10px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.2);border-radius:4px;font-size:11px;color:var(--amber)">⚠ Both tools have identical descriptions. The agent cannot distinguish between them — this is the root cause.</div>`;
+        }
+        html += `<div class="detail-section"><div class="detail-section-title">TOOLS AVAILABLE</div>${toolHtml}</div>`;
+      }
+    }
+
+    if (s.type === 'tool') {
+      html += `<div class="detail-section">
+        <div class="detail-section-title">INPUT</div>
+        <div class="code-block-sm">${syntaxJson(s.input)}</div>
+      </div>`;
+
+      const outStyle = s.outputIsError ? 'border-color:rgba(239,68,68,0.3);background:rgba(239,68,68,0.04)' : '';
+      html += `<div class="detail-section">
+        <div class="detail-section-title">OUTPUT</div>
+        <div class="code-block-sm" style="${outStyle}">${syntaxJson(s.output)}</div>
+      </div>`;
+
+      if (s.hallucinations && s.hallucinations.length) {
+        let hHtml = '';
+        for (const h of s.hallucinations) {
+          hHtml += `<div class="halluc-card"><span class="h-severity">${h.severity}</span><span class="h-title">${escapeHtml(h.title)}</span>${escapeHtml(h.text)}</div>`;
+        }
+        html += `<div class="detail-section"><div class="detail-section-title">DIAGNOSIS NOTE</div>${hHtml}</div>`;
+      }
+    }
+
+    if (s.type === 'error') {
+      html += `<div class="detail-section">
+        <div class="detail-section-title">ERROR</div>
+        <div class="error-block">${escapeHtml(s.errorText)}</div>
+      </div>`;
+    }
+
+    html += `</div>`;
+    return html;
+  }
+
+  function selectSpan(idx) {
+    document.querySelectorAll('.tl-row').forEach((r, i) => {
+      r.classList.toggle('active', i === idx);
+    });
+    document.querySelectorAll('.tl-seg').forEach((s, i) => {
+      s.style.opacity = i === idx ? '1' : '0.6';
+    });
+    document.getElementById('span-detail').innerHTML = renderSpan(idx);
+    document.querySelectorAll('.collapsible-body')[0] && null;
+  }
+
+  // Wire up row clicks
+  document.querySelectorAll('.tl-row').forEach((row, i) => {
+    row.addEventListener('click', () => selectSpan(i));
+  });
+
+  // Wire up strip clicks
+  document.querySelectorAll('.tl-seg').forEach((seg, i) => {
+    seg.addEventListener('click', () => selectSpan(i));
+  });
+
+  // Keyboard nav
+  let currentIdx = 0;
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown' || e.key === 'j') {
+      currentIdx = Math.min(currentIdx + 1, SPANS.length - 1);
+      selectSpan(currentIdx);
+    } else if (e.key === 'ArrowUp' || e.key === 'k') {
+      currentIdx = Math.max(currentIdx - 1, 0);
+      selectSpan(currentIdx);
+    }
+  });
+
+  // Initial render
+  selectSpan(0);
+</script>
+</body>
+</html>

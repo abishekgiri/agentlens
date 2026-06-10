@@ -24,14 +24,14 @@ It is intentionally not a hosted observability product. No dashboard, no DB, no 
 I am looking for 10 developers with real broken agent runs to test whether this actually saves debugging time.
 
 Repo:
-https://github.com/abishekgiri/agentlens-
+https://github.com/agentlens-hq/agentlens
 
 Install:
 
 ```bash
-git clone https://github.com/abishekgiri/agentlens-.git
-cd agentlens-
-pip install -e .
+git clone https://github.com/agentlens-hq/agentlens.git
+cd agentlens
+pip install -e ".[anthropic,openai]"
 ```
 
 Useful commands:
