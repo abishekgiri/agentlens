@@ -27,6 +27,7 @@ Also captures **CrewAI · AutoGen · PydanticAI** agents through their underlyin
 
 ```bash
 pip install runlens
+agentlens demo        # see a full diagnosis in 10 seconds — no API key needed
 ```
 
 Or from source:
@@ -143,6 +144,10 @@ Plus **hallucination detection** — invented tool parameters, missing required 
 ## CLI reference
 
 ```bash
+# Try it
+agentlens demo                          # captures + diagnoses a broken agent, opens the timeline
+agentlens watch                         # live mode — spans stream as your agents run
+
 # Runs
 agentlens runs list                     # all recent runs with status + span count
 agentlens runs show <run_id>            # full span detail for one run

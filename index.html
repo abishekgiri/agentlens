@@ -392,7 +392,7 @@
   <div class="install-wrap">
     <span class="install-prompt">$</span>
     <span class="install-cmd" id="install-text">pip install runlens</span>
-    <button class="copy-btn" onclick="copyInstall()" title="Copy">⎘</button>
+    <button class="copy-btn" onclick="copyInstall(this)" title="Copy">⎘</button>
   </div>
   <br>
   <span class="hero-note">Python 3.9+ · no cloud · no API key required · <a href="https://github.com/agentlens-hq/agentlens" style="color:var(--text3)">clone first →</a></span>
@@ -640,12 +640,12 @@ app = graph.<span class="fn">compile</span>()               <span class="cm"># e
     <div class="code-header">
       <span class="code-lang">shell</span>
     </div>
-    <pre><span class="t-prompt" style="color:var(--green)">$</span> agentlens runs list          <span class="cm"># all recent runs with status + cost</span>
-<span class="t-prompt" style="color:var(--green)">$</span> agentlens runs show &lt;id&gt;     <span class="cm"># full span detail — every LLM call, tool call, error</span>
+    <pre><span class="t-prompt" style="color:var(--green)">$</span> agentlens demo               <span class="cm"># see a full diagnosis in 10 seconds — no API key</span>
+<span class="t-prompt" style="color:var(--green)">$</span> agentlens watch              <span class="cm"># live mode — spans stream as your agent runs</span>
+<span class="t-prompt" style="color:var(--green)">$</span> agentlens runs list          <span class="cm"># all recent runs with status + cost</span>
+<span class="t-prompt" style="color:var(--green)">$</span> agentlens runs view &lt;id&gt;    <span class="cm"># visual timeline in the browser</span>
 <span class="t-prompt" style="color:var(--green)">$</span> agentlens diagnose &lt;id&gt;     <span class="cm"># root cause + fix</span>
-<span class="t-prompt" style="color:var(--green)">$</span> agentlens stats              <span class="cm"># token usage, latency, cost across all runs</span>
-<span class="t-prompt" style="color:var(--green)">$</span> agentlens anonymize &lt;id&gt;    <span class="cm"># redact secrets before sharing</span>
-<span class="t-prompt" style="color:var(--green)">$</span> agentlens evaluate           <span class="cm"># accuracy check against your test cases</span></pre>
+<span class="t-prompt" style="color:var(--green)">$</span> agentlens stats              <span class="cm"># token usage, latency, cost across all runs</span></pre>
   </div>
 </section>
 
@@ -658,10 +658,12 @@ app = graph.<span class="fn">compile</span>()               <span class="cm"># e
 
   <div class="install-wrap" style="margin: 0 auto 16px;">
     <span class="install-prompt">$</span>
-    <span class="install-cmd">pip install runlens</span>
-    <button class="copy-btn" onclick="copyInstall()" title="Copy">⎘</button>
+    <span class="install-cmd">pip install runlens &amp;&amp; agentlens demo</span>
+    <button class="copy-btn" onclick="copyInstall(this)" title="Copy">⎘</button>
   </div>
   <br>
+  <span class="hero-note">two commands — full diagnosis in your browser, no API key</span>
+  <br><br>
   <a href="https://github.com/agentlens-hq/agentlens" target="_blank" style="color:var(--text2); font-size:13px; font-family:var(--mono);">
     ★ Star on GitHub →
   </a>
@@ -672,9 +674,11 @@ app = graph.<span class="fn">compile</span>()               <span class="cm"># e
 </footer>
 
 <script>
-  function copyInstall() {
-    navigator.clipboard.writeText('pip install runlens').then(() => {
-      const btn = document.querySelector('.copy-btn');
+  function copyInstall(btn) {
+    const cmd = btn && btn.parentElement.querySelector('.install-cmd');
+    const text = cmd ? cmd.textContent.trim() : 'pip install runlens';
+    navigator.clipboard.writeText(text).then(() => {
+      btn = btn || document.querySelector('.copy-btn');
       btn.textContent = '✓';
       btn.style.color = 'var(--green)';
       setTimeout(() => { btn.textContent = '⎘'; btn.style.color = ''; }, 1800);
