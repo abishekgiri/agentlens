@@ -49,6 +49,8 @@ CLI_COMMANDS = {
     "evaluate",
     "doctor",
     "stats",
+    "demo",
+    "watch",
 }
 
 
@@ -85,8 +87,20 @@ def main() -> None:
     stats_parser.add_argument("run_id", nargs="?")
     subparsers.add_parser("evaluate")
     subparsers.add_parser("doctor")
+    demo_parser = subparsers.add_parser("demo")
+    demo_parser.add_argument("--no-browser", action="store_true", help="Skip opening the timeline in a browser")
+    watch_parser = subparsers.add_parser("watch")
+    watch_parser.add_argument("--interval", type=float, default=0.5, help="Poll interval in seconds")
 
     args = parser.parse_args()
+
+    if args.command == "demo":
+        _run_demo(open_browser=not args.no_browser)
+        return
+
+    if args.command == "watch":
+        _watch_runs(interval=args.interval)
+        return
 
     if args.command == "runs" and args.runs_command == "list":
         _print_runs_list()
@@ -759,6 +773,192 @@ def _print_stitch(run_id: str) -> None:
     for j, child in enumerate(kids):
         print_tree(child, "", is_last=(j == len(kids) - 1))
     print()
+
+
+def _run_demo(open_browser: bool = True) -> None:
+    """One-command demo: capture a broken agent run, diagnose it, open the timeline.
+
+    Works offline, requires no API key — the agent is simulated through the real
+    capture pipeline so the saved run is identical in shape to a live capture.
+    """
+    from agentlens_sdk.collector import _current_run, _finalize_run, append_span, start_run
+
+    print("AgentLens Demo")
+    print("=" * 60)
+    print()
+    print("Simulating a broken customer-support agent...")
+    print("  Two tools with near-identical descriptions: search_web, query_db")
+    print("  The task needs local records. Watch what the agent picks.")
+    print()
+
+    run_data = start_run(name="demo_customer_support_agent")
+    token = _current_run.set(run_data)
+    try:
+        tools = [
+            {
+                "name": "search_web",
+                "description": "find info about a topic",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            },
+            {
+                "name": "query_db",
+                "description": "find info about a topic",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            },
+        ]
+        append_span(
+            {
+                "type": "llm_call",
+                "provider": "anthropic",
+                "ts": datetime.now().astimezone().isoformat(),
+                "latency_ms": 412.6,
+                "model": "claude-3-5-sonnet-latest",
+                "input_messages": [
+                    {
+                        "role": "user",
+                        "content": "Find the renewal status for customer:alex using local records.",
+                    }
+                ],
+                "tools": tools,
+                "response_content": [
+                    {
+                        "type": "text",
+                        "text": "Both tools say they find info about a topic. I will use search_web.",
+                    },
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_demo_001",
+                        "name": "search_web",
+                        "input": {"query": "customer:alex renewal status"},
+                    },
+                ],
+                "stop_reason": "tool_use",
+                "usage": {"input_tokens": 158, "output_tokens": 42},
+                "cost_usd": 0.001104,
+            }
+        )
+        record_tool_result(
+            tool_name="search_web",
+            input={"query": "customer:alex renewal status"},
+            output={
+                "status": "error",
+                "error": "Network access disabled. Customer records are only available in query_db.",
+            },
+            tool_use_id="toolu_demo_001",
+        )
+        run_data["status"] = "error"
+        run_data["error"] = "agent picked the wrong tool"
+    finally:
+        _finalize_run(run_data)
+        _current_run.reset(token)
+
+    run_id = run_data["run_id"]
+    print(f"Run captured: {run_id[:8]}  ({len(run_data['spans'])} spans)")
+    print()
+    print("Diagnosing...")
+    print()
+    _print_diagnosis(run_id)
+    print()
+    print("=" * 60)
+    print("Next steps:")
+    print(f"  agentlens runs view {run_id[:8]}     # visual timeline")
+    print(f"  agentlens runs prompt {run_id[:8]}   # exact prompts sent")
+    print()
+    print("Use it on your own agent — two lines:")
+    print("  import agentlens")
+    print("  agentlens.init()   # before creating your Anthropic/OpenAI client")
+    if open_browser:
+        print()
+        print("Opening the timeline viewer...")
+        _open_timeline(run_id)
+
+
+def _watch_runs(interval: float = 0.5) -> None:
+    """Live mode: tail .agentlens/runs/ and print spans as agents execute."""
+    import time as _time
+
+    colors = {
+        "llm_call": "\033[34m",       # blue
+        "tool_call": "\033[32m",      # green
+        "error": "\033[31m",          # red
+        "memory_snapshot": "\033[33m",  # amber
+        "langgraph_node": "\033[35m",   # purple
+        "langgraph_run": "\033[35m",
+    }
+    reset, dim = "\033[0m", "\033[2m"
+
+    def describe(span: dict[str, Any]) -> str:
+        stype = span.get("type", "?")
+        color = colors.get(stype, "")
+        if stype == "llm_call":
+            u = span.get("usage") or {}
+            tok = (u.get("input_tokens", 0) or u.get("prompt_tokens", 0)) + (
+                u.get("output_tokens", 0) or u.get("completion_tokens", 0)
+            )
+            extra = f"  {tok} tok" if tok else ""
+            lat = span.get("latency_ms")
+            extra += f"  {lat:.0f}ms" if isinstance(lat, (int, float)) and lat else ""
+            return f"{color}llm_call{reset}   {span.get('model', '?')}{dim}{extra}{reset}"
+        if stype == "tool_call":
+            out = span.get("output")
+            bad = isinstance(out, dict) and (out.get("status") == "error" or out.get("error"))
+            mark = f"  {colors['error']}error result{reset}" if bad else ""
+            return f"{color}tool_call{reset}  {span.get('tool_name', '?')}{mark}"
+        if stype == "error":
+            return f"{color}error{reset}      {str(span.get('error', ''))[:80]}"
+        return f"{color}{stype}{reset}  {span.get('tool_name') or span.get('label') or ''}"
+
+    print(f"Watching {RUNS_DIR}/ for agent activity... (Ctrl+C to stop)", flush=True)
+    print()
+
+    seen: dict[str, int] = {}  # path -> span count already printed
+    announced: set[str] = set()
+    try:
+        while True:
+            if RUNS_DIR.exists():
+                for path in sorted(RUNS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime):
+                    try:
+                        run_data = json.loads(path.read_text(encoding="utf-8"))
+                    except (json.JSONDecodeError, OSError):
+                        continue
+                    spans = [s for s in (run_data.get("spans") or []) if isinstance(s, dict)]
+                    key = str(path)
+                    if key not in seen:
+                        # Runs that existed before watch started are skipped;
+                        # only freshly written runs stream from span 0.
+                        seen[key] = 0 if _is_new(path) else len(spans)
+                    if seen[key] < len(spans):
+                        rid = (run_data.get("run_id") or path.stem)[:8]
+                        if key not in announced:
+                            status = run_data.get("status", "?")
+                            print(f"{dim}── run {rid}  {run_data.get('name', '')}{reset}", flush=True)
+                            announced.add(key)
+                        for i in range(seen[key], len(spans)):
+                            print(f"  {rid}  [{i + 1}] {describe(spans[i])}", flush=True)
+                        seen[key] = len(spans)
+                        if run_data.get("status") in ("error", "failure"):
+                            print(f"  {rid}  {colors['error']}run FAILED{reset} → agentlens diagnose {rid}", flush=True)
+            _time.sleep(interval)
+    except KeyboardInterrupt:
+        print("\nStopped watching.", flush=True)
+
+
+def _is_new(path: Path) -> bool:
+    """True if the file was modified in the last 5 seconds."""
+    import time as _time
+
+    try:
+        return (_time.time() - path.stat().st_mtime) < 5
+    except OSError:
+        return False
 
 
 def _load_run_or_report(run_id: str) -> dict[str, Any] | None:
