@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: pip install -e ".[anthropic,openai]"
+
+      - name: Unit tests
+        run: python tests/test_beta_safety.py
+
+      - name: Doctor (system health)
+        run: |
+          python -m agentlens doctor | tee doctor.out
+          grep -q "Result: healthy" doctor.out
+
+      - name: Evaluate (diagnosis accuracy must stay 100%)
+        run: |
+          python -m agentlens evaluate | tee eval.out
+          grep -q "Fixture accuracy: 100%" eval.out
+
+      - name: Public API surface
+        run: |
+          python - <<'PY'
+          import agentlens
+          required = ['init', 'run', 'patch_langgraph', 'record_tool_result',
+                      'record_memory_snapshot', 'get_trace_context', 'save_run']
+          missing = [n for n in required if not callable(getattr(agentlens, n, None))]
+          assert not missing, f'missing public API: {missing}'
+          print('public API OK')
+          PY
+
+      - name: Examples run end-to-end
+        run: |
+          python examples/anthropic_broken_agent.py
+          python examples/openai_broken_agent.py
+
+      - name: Package builds clean
+        if: matrix.python-version == '3.12'
+        run: |
+          pip install build twine
+          python -m build
+          python -m twine check dist/* --strict
