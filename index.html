@@ -4,13 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AgentLens — When your AI agent breaks, this tells you why</title>
-  <meta name="description" content="AgentLens tells you exactly which decision broke your AI agent and what to change. Works with LangGraph, CrewAI, AutoGen, OpenAI, Anthropic. Two lines to install." />
+  <meta name="description" content="AgentLens tells you exactly which decision broke your AI agent and what to change. Works with Anthropic, OpenAI, LangGraph — and any framework built on them. Two lines to install." />
   <meta property="og:title" content="AgentLens — When your AI agent breaks, this tells you why" />
-  <meta property="og:description" content="Not logs. Not traces. The answer. Works with LangGraph, CrewAI, AutoGen, OpenAI, Anthropic." />
+  <meta property="og:description" content="Not logs. Not traces. The answer. Works with Anthropic, OpenAI, LangGraph — and any framework built on them." />
   <meta property="og:url" content="https://agentlens.run" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="AgentLens — When your AI agent breaks, this tells you why" />
-  <meta name="twitter:description" content="Not logs. Not traces. The answer. Works with LangGraph, CrewAI, AutoGen, OpenAI, Anthropic." />
+  <meta name="twitter:description" content="Not logs. Not traces. The answer. Works with Anthropic, OpenAI, LangGraph — and any framework built on them." />
   <link rel="canonical" href="https://agentlens.run" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -170,6 +170,17 @@
       font-size: 12px;
       font-family: var(--mono);
       color: var(--text2);
+    }
+    .fw-native {
+      color: var(--green);
+      border-color: rgba(34,197,94,0.3);
+    }
+    .fw-note {
+      margin-top: 12px;
+      text-align: center;
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--text3);
     }
 
     /* ── TERMINAL DEMO ── */
@@ -391,14 +402,15 @@
   </a>
 
   <div class="frameworks">
-    <span class="fw-tag">Anthropic</span>
-    <span class="fw-tag">OpenAI</span>
-    <span class="fw-tag">LangGraph</span>
-    <span class="fw-tag">CrewAI</span>
-    <span class="fw-tag">AutoGen</span>
-    <span class="fw-tag">PydanticAI</span>
-    <span class="fw-tag">raw API</span>
+    <span class="fw-tag fw-native">Anthropic</span>
+    <span class="fw-tag fw-native">OpenAI</span>
+    <span class="fw-tag fw-native">LangGraph</span>
+    <span class="fw-tag fw-native">raw API</span>
+    <span class="fw-tag">CrewAI*</span>
+    <span class="fw-tag">AutoGen*</span>
+    <span class="fw-tag">PydanticAI*</span>
   </div>
+  <div class="fw-note">* traced through their underlying Anthropic/OpenAI calls — LLM + tool calls captured, framework-level spans on the roadmap</div>
 </section>
 
 <!-- TERMINAL DEMO -->
@@ -536,9 +548,9 @@ app = graph.<span class="fn">compile</span>()               <span class="cm"># e
 
 <!-- DIAGNOSIS EXAMPLES -->
 <section id="examples">
-  <div class="section-label">// real examples</div>
-  <h2>Same tool. Five frameworks.</h2>
-  <p class="sub">AgentLens diagnosed these from real traces across different frameworks — same output format every time.</p>
+  <div class="section-label">// example diagnoses</div>
+  <h2>Same answer format. Any framework.</h2>
+  <p class="sub">Three failure patterns AgentLens detects — whatever your agent is built with, the diagnosis looks like this.</p>
 
   <div class="diag-grid">
     <div class="diag-card">

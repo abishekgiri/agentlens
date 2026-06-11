@@ -18,7 +18,8 @@ FIX:          Rewrite tool descriptions so search_web is clearly for external
 CONFIDENCE:   0.90
 ```
 
-Works with **Anthropic · OpenAI · LangGraph · CrewAI · AutoGen · PydanticAI · raw API**
+Native support: **Anthropic · OpenAI · LangGraph · raw API**
+Also captures **CrewAI · AutoGen · PydanticAI** agents through their underlying Anthropic/OpenAI calls (framework-level spans on the roadmap).
 
 ---
 
